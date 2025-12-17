@@ -1,0 +1,324 @@
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { v4 as uuidv4 } from 'uuid';
+import { query } from '../db/connection';
+import { outlineClient } from '../services/outline';
+import { indexDocument, getIndexStats } from '../services/embeddings';
+import { logger } from '../config/logger';
+
+const router = Router();
+
+const reindexSchema = z.object({
+  collections: z.array(z.string()).optional(),
+  force: z.boolean().optional().default(false)
+});
+
+const scheduleSchema = z.object({
+  enabled: z.boolean(),
+  frequency: z.enum(['hourly', 'daily', 'weekly']),
+  time: z.string().optional()
+});
+
+router.post('/reindex-all', async (req: Request, res: Response) => {
+  try {
+    const body = reindexSchema.parse(req.body);
+
+    const jobResult = await query(
+      `INSERT INTO ai_indexing_jobs (status, collections, started_at)
+       VALUES ('running', $1, NOW())
+       RETURNING id`,
+      [JSON.stringify(body.collections || [])]
+    );
+
+    const jobId = jobResult.rows[0].id;
+
+    (async () => {
+      try {
+        let documents: any[] = [];
+
+        if (body.collections && body.collections.length > 0) {
+          for (const collectionId of body.collections) {
+            const collDocs = await outlineClient.getCollectionDocuments(collectionId);
+            documents.push(...collDocs);
+          }
+        } else {
+          let offset = 0;
+          const limit = 100;
+          while (true) {
+            const batch = await outlineClient.listDocuments({ limit, offset });
+            documents.push(...batch);
+            if (batch.length < limit) {
+              break;
+            }
+            offset += limit;
+          }
+        }
+
+        await query(
+          'UPDATE ai_indexing_jobs SET documents_queued = $1 WHERE id = $2',
+          [documents.length, jobId]
+        );
+
+        let documentsIndexed = 0;
+        let chunksCreated = 0;
+
+        for (const doc of documents) {
+          try {
+            const chunks = await indexDocument({
+              documentId: doc.id,
+              collectionId: doc.collectionId,
+              title: doc.title,
+              content: doc.text
+            });
+            documentsIndexed++;
+            chunksCreated += chunks;
+
+            await query(
+              'UPDATE ai_indexing_jobs SET documents_indexed = $1, chunks_created = $2 WHERE id = $3',
+              [documentsIndexed, chunksCreated, jobId]
+            );
+          } catch (error) {
+            logger.error('Failed to index document', { documentId: doc.id, error });
+          }
+        }
+
+        await query(
+          `UPDATE ai_indexing_jobs 
+           SET status = 'completed', completed_at = NOW(), 
+               documents_indexed = $1, chunks_created = $2
+           WHERE id = $3`,
+          [documentsIndexed, chunksCreated, jobId]
+        );
+
+        logger.info('Reindex job completed', { jobId, documentsIndexed, chunksCreated });
+      } catch (error) {
+        logger.error('Reindex job failed', { jobId, error });
+        await query(
+          `UPDATE ai_indexing_jobs SET status = 'failed', error = $1 WHERE id = $2`,
+          [error instanceof Error ? error.message : 'Unknown error', jobId]
+        );
+      }
+    })();
+
+    res.json({
+      success: true,
+      job: {
+        jobId,
+        status: 'started',
+        documentsQueued: 0
+      }
+    });
+  } catch (error) {
+    logger.error('Reindex-all failed', error);
+    
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        }
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'REINDEX_FAILED',
+        message: error instanceof Error ? error.message : 'Failed to start reindex'
+      }
+    });
+  }
+});
+
+router.get('/jobs', async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT * FROM ai_indexing_jobs ORDER BY started_at DESC LIMIT 20`
+    );
+
+    res.json({
+      success: true,
+      jobs: result.rows.map((row: any) => ({
+        jobId: row.id,
+        status: row.status,
+        collections: row.collections,
+        documentsQueued: row.documents_queued,
+        documentsIndexed: row.documents_indexed,
+        chunksCreated: row.chunks_created,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        error: row.error
+      }))
+    });
+  } catch (error) {
+    logger.error('Get jobs failed', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'GET_JOBS_FAILED',
+        message: 'Failed to get indexing jobs'
+      }
+    });
+  }
+});
+
+router.get('/jobs/:jobId', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+
+    const result = await query(
+      'SELECT * FROM ai_indexing_jobs WHERE id = $1',
+      [jobId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'JOB_NOT_FOUND',
+          message: 'Job not found'
+        }
+      });
+      return;
+    }
+
+    const row = result.rows[0];
+    res.json({
+      success: true,
+      job: {
+        jobId: row.id,
+        status: row.status,
+        collections: row.collections,
+        documentsQueued: row.documents_queued,
+        documentsIndexed: row.documents_indexed,
+        chunksCreated: row.chunks_created,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        error: row.error
+      }
+    });
+  } catch (error) {
+    logger.error('Get job failed', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'GET_JOB_FAILED',
+        message: 'Failed to get job'
+      }
+    });
+  }
+});
+
+router.post('/schedule', async (req: Request, res: Response) => {
+  try {
+    const body = scheduleSchema.parse(req.body);
+
+    await query(
+      `INSERT INTO ai_settings (key, value, updated_at)
+       VALUES ('indexing_schedule', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [JSON.stringify(body)]
+    );
+
+    res.json({
+      success: true,
+      schedule: {
+        enabled: body.enabled,
+        frequency: body.frequency,
+        time: body.time,
+        nextRun: body.enabled ? calculateNextRun(body.frequency, body.time) : null
+      }
+    });
+  } catch (error) {
+    logger.error('Set schedule failed', error);
+    
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        }
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SCHEDULE_FAILED',
+        message: 'Failed to set schedule'
+      }
+    });
+  }
+});
+
+router.get('/schedule', async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      "SELECT value FROM ai_settings WHERE key = 'indexing_schedule'"
+    );
+
+    if (result.rows.length === 0) {
+      res.json({
+        success: true,
+        schedule: {
+          enabled: false,
+          frequency: 'daily',
+          time: '02:00',
+          nextRun: null
+        }
+      });
+      return;
+    }
+
+    const schedule = result.rows[0].value;
+    res.json({
+      success: true,
+      schedule: {
+        ...schedule,
+        nextRun: schedule.enabled ? calculateNextRun(schedule.frequency, schedule.time) : null
+      }
+    });
+  } catch (error) {
+    logger.error('Get schedule failed', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'GET_SCHEDULE_FAILED',
+        message: 'Failed to get schedule'
+      }
+    });
+  }
+});
+
+function calculateNextRun(frequency: string, time?: string): string {
+  const now = new Date();
+  const next = new Date(now);
+
+  if (time) {
+    const [hours, minutes] = time.split(':').map(Number);
+    next.setHours(hours, minutes, 0, 0);
+  }
+
+  switch (frequency) {
+    case 'hourly':
+      next.setHours(next.getHours() + 1);
+      next.setMinutes(0, 0, 0);
+      break;
+    case 'daily':
+      if (next <= now) {
+        next.setDate(next.getDate() + 1);
+      }
+      break;
+    case 'weekly':
+      next.setDate(next.getDate() + 7);
+      break;
+  }
+
+  return next.toISOString();
+}
+
+export default router;
