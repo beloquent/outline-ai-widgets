@@ -77,6 +77,11 @@ services:
       - outline_data:/var/lib/outline/data
     networks:
       - outline-internal
+    # Fix for yarn 4.x: Outline's package.json defines "packageManager": "yarn@4.11.0"
+    # but the container ships with yarn 1.22.22. Enable corepack to activate yarn 4.x
+    # so that both startup and exec commands (e.g. yarn db:migrate) work correctly.
+    command: >
+      sh -c "corepack enable && corepack prepare yarn@4.11.0 --activate && yarn start --env production"
     security_opt:
       - no-new-privileges:true
     # Note: Port 3000 is internal only, accessed via widgets container
