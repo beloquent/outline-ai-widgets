@@ -392,6 +392,12 @@ outlineProxy.on('proxyRes', async (proxyRes: IncomingMessage, req: IncomingMessa
         '</head>',
         `${widgetScript}</head>`
       );
+      const wasInjected = injectedBody !== body;
+      if (wasInjected) {
+        log('info', `Widget bootstrap injected into ${req.url}`);
+      } else {
+        log('warn', `HTML response from ${req.url} had no </head> tag — widget not injected`);
+      }
       res.end(injectedBody);
     });
   } else {
@@ -428,7 +434,37 @@ const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
   const startTime = Date.now();
   let target = 'Outline';
-  
+
+  if (url === '/gateway/health') {
+    target = 'Gateway';
+    const [outlineHealth, widgetHealth, aiHealth] = await Promise.all([
+      checkServiceHealth(OUTLINE_URL),
+      checkServiceHealth(WIDGET_URL),
+      checkServiceHealth(AI_SERVICE_URL),
+    ]);
+    const payload = {
+      status: 'healthy',
+      service: 'gateway',
+      timestamp: new Date().toISOString(),
+      config: {
+        outlineUrl: OUTLINE_URL,
+        widgetUrl: WIDGET_URL,
+        aiServiceUrl: AI_SERVICE_URL,
+        cspEnabled: ENABLE_CSP,
+        cspReportOnly: CSP_REPORT_ONLY,
+        logLevel: CURRENT_LOG_LEVEL,
+      },
+      upstreams: {
+        outline: outlineHealth.healthy ? 'reachable' : `unreachable: ${outlineHealth.error}`,
+        widgetFramework: widgetHealth.healthy ? 'reachable' : `unreachable: ${widgetHealth.error}`,
+        aiService: aiHealth.healthy ? 'reachable' : `unreachable: ${aiHealth.error}`,
+      },
+    };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload, null, 2));
+    return;
+  }
+
   if (url.startsWith('/widget-framework/')) {
     target = 'Widget Framework';
     const rewrittenUrl = url.replace('/widget-framework', '');
