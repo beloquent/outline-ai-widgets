@@ -123,7 +123,7 @@ services:
       # Outline API key for document access (can also be set via AI Settings UI)
       OUTLINE_API_KEY: ${OUTLINE_API_KEY:-}
       # Logging level (debug, info, warn, error)
-      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
     networks:
       - outline-internal
       - outline-public
