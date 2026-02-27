@@ -7,6 +7,11 @@ const outline_1 = require("../services/outline");
 const settings_1 = require("../services/settings");
 const logger_1 = require("../config/logger");
 const router = (0, express_1.Router)();
+const attachmentSchema = zod_1.z.object({
+    id: zod_1.z.string(),
+    filename: zod_1.z.string(),
+    content: zod_1.z.string()
+});
 const generateSchema = zod_1.z.object({
     title: zod_1.z.string().min(1),
     collectionId: zod_1.z.string().optional(),
@@ -18,6 +23,7 @@ const generateSchema = zod_1.z.object({
         notes: zod_1.z.string().optional(),
         transcript: zod_1.z.string().optional()
     }).optional().default({}),
+    attachments: zod_1.z.array(attachmentSchema).optional().default([]),
     publish: zod_1.z.boolean().optional().default(false)
 });
 router.post('/generate', async (req, res) => {
@@ -40,6 +46,14 @@ router.post('/generate', async (req, res) => {
         }
         if (body.inputs.transcript) {
             userPrompt += `\nMeeting Transcript to analyze:\n${body.inputs.transcript}\n`;
+        }
+        if (body.attachments && body.attachments.length > 0) {
+            userPrompt += `\nReference files provided:\n`;
+            body.attachments.forEach((att, i) => {
+                userPrompt += `\n--- File ${i + 1}: "${att.filename}" ---\n${att.content}\n`;
+            });
+            userPrompt += `\nPlease use the content from these reference files to inform and enhance the document.\n`;
+            logger_1.logger.info('Added attachment context to builder prompt', { count: body.attachments.length });
         }
         const markdown = await (0, openai_1.chat)({
             feature: 'builder',

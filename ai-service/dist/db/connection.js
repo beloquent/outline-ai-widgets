@@ -6,12 +6,35 @@ exports.query = query;
 const pg_1 = require("pg");
 const settings_1 = require("../config/settings");
 const logger_1 = require("../config/logger");
-exports.pool = new pg_1.Pool({
-    connectionString: settings_1.config.databaseUrl,
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
-});
+function buildPoolConfig() {
+    const base = {
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
+    };
+    if (!settings_1.config.databaseUrl) {
+        return base;
+    }
+    // Parse DATABASE_URL explicitly to handle special characters in passwords
+    // that break pg's internal connection string parser
+    try {
+        const url = new URL(settings_1.config.databaseUrl);
+        return {
+            ...base,
+            host: url.hostname,
+            port: parseInt(url.port || '5432', 10),
+            database: url.pathname.slice(1),
+            user: decodeURIComponent(url.username),
+            password: decodeURIComponent(url.password),
+            ssl: url.searchParams.get('sslmode') === 'require' ? { rejectUnauthorized: false } : undefined,
+        };
+    }
+    catch {
+        // Fallback to connectionString if URL parsing fails
+        return { ...base, connectionString: settings_1.config.databaseUrl };
+    }
+}
+exports.pool = new pg_1.Pool(buildPoolConfig());
 exports.pool.on('error', (err) => {
     logger_1.logger.error('Unexpected database pool error:', err);
 });

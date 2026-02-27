@@ -117,7 +117,8 @@ var ContextService = class {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: documentId, includeText: true })
       });
-      if (!response.ok) return null;
+      if (!response.ok)
+        return null;
       const { data } = await response.json();
       const context = {
         id: data.id,
@@ -147,7 +148,8 @@ var ContextService = class {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: collectionId })
       });
-      if (!response.ok) return null;
+      if (!response.ok)
+        return null;
       const { data } = await response.json();
       this.cache.set(`collection:${collectionId}`, { data, timestamp: Date.now() });
       return data;
@@ -167,7 +169,8 @@ var ContextService = class {
         credentials: "include",
         headers: { "Content-Type": "application/json" }
       });
-      if (!response.ok) return null;
+      if (!response.ok)
+        return null;
       const { data } = await response.json();
       const user = {
         id: data.user.id,
@@ -197,7 +200,8 @@ var WidgetStorage = class {
   get(key, defaultValue) {
     try {
       const value = localStorage.getItem(this.prefix + key);
-      if (value === null) return defaultValue;
+      if (value === null)
+        return defaultValue;
       return JSON.parse(value);
     } catch {
       return defaultValue;
@@ -293,7 +297,8 @@ var WidgetSDK = class {
   }
   async unmount(widgetId) {
     const instance = this.widgets.get(widgetId);
-    if (!instance) return;
+    if (!instance)
+      return;
     try {
       if (instance.definition.onUnmount) {
         await instance.definition.onUnmount();
@@ -394,7 +399,8 @@ var MountOrchestrator = class {
     this.quotas = quotas;
   }
   initialize() {
-    if (this.rootContainer) return;
+    if (this.rootContainer)
+      return;
     this.rootContainer = document.createElement("div");
     this.rootContainer.id = "widget-framework-root";
     this.rootContainer.style.cssText = `
@@ -438,7 +444,8 @@ var MountOrchestrator = class {
   }
   releaseSlot(widgetId) {
     const slot = this.slots.get(widgetId);
-    if (!slot) return;
+    if (!slot)
+      return;
     slot.element.remove();
     this.slots.delete(widgetId);
     this.slotCounts[slot.type]--;
@@ -581,7 +588,8 @@ var WidgetLoader = class {
     }
   }
   async loadAllWidgets() {
-    if (!this.manifest?.widgets) return;
+    if (!this.manifest?.widgets)
+      return;
     const enabledWidgets = this.manifest.widgets.filter((w) => w.enabled !== false);
     const prioritized = enabledWidgets.map((entry) => ({
       entry,
@@ -598,9 +606,12 @@ var WidgetLoader = class {
   }
   getPriority(entry) {
     if (entry.priority !== void 0) {
-      if (entry.priority >= 90) return "critical";
-      if (entry.priority >= 70) return "high";
-      if (entry.priority >= 30) return "normal";
+      if (entry.priority >= 90)
+        return "critical";
+      if (entry.priority >= 70)
+        return "high";
+      if (entry.priority >= 30)
+        return "normal";
       return "low";
     }
     return "normal";
@@ -625,10 +636,13 @@ var WidgetLoader = class {
     this.processQueue();
   }
   async processQueue() {
-    if (this.loadQueue.length === 0) return;
-    if (this.activeLoads >= (this.config.maxConcurrentLoads || 3)) return;
+    if (this.loadQueue.length === 0)
+      return;
+    if (this.activeLoads >= (this.config.maxConcurrentLoads || 3))
+      return;
     const next = this.loadQueue.shift();
-    if (!next) return;
+    if (!next)
+      return;
     this.activeLoads++;
     try {
       await this.loadWidget(next.entry);
@@ -773,7 +787,8 @@ var WidgetRegistry = class {
   }
   isVersionAllowed(widgetId, version) {
     const constraint = this.constraints.find((c) => c.widgetId === widgetId);
-    if (!constraint) return true;
+    if (!constraint)
+      return true;
     if (constraint.blockedVersions.some((v) => this.matchesVersion(version, v))) {
       return false;
     }
@@ -783,7 +798,8 @@ var WidgetRegistry = class {
     return true;
   }
   matchesVersion(version, pattern) {
-    if (pattern === "*") return true;
+    if (pattern === "*")
+      return true;
     if (pattern.endsWith(".x")) {
       const prefix = pattern.slice(0, -2);
       return version.startsWith(prefix);

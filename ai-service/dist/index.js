@@ -77,7 +77,7 @@ app.use('/ai/builder', auth_1.sessionAuthMiddleware, builder_1.default);
 app.use('/ai/copilot', auth_1.sessionAuthMiddleware, copilot_1.default);
 app.use('/ai/rag', auth_1.sessionAuthMiddleware, rag_1.default);
 app.use('/ai/workflow', auth_1.authMiddleware, workflow_1.default);
-app.use('/ai/indexing', auth_1.authMiddleware, indexing_1.default);
+app.use('/ai/indexing', auth_1.adminAuthMiddleware, indexing_1.default);
 app.use('/ai/admin', admin_1.default);
 app.use('/ai/documents', auth_1.sessionAuthMiddleware, documents_1.default);
 app.use((err, req, res, next) => {

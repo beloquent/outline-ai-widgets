@@ -9,15 +9,22 @@ const settings_1 = require("../services/settings");
 const settings_2 = require("../config/settings");
 const logger_1 = require("../config/logger");
 const router = (0, express_1.Router)();
+const attachmentSchema = zod_1.z.object({
+    id: zod_1.z.string(),
+    filename: zod_1.z.string(),
+    content: zod_1.z.string()
+});
 const chatSchema = zod_1.z.object({
     documentId: zod_1.z.string().optional(),
+    documentPath: zod_1.z.string().optional(),
     documentContent: zod_1.z.string().optional(),
     question: zod_1.z.string().min(1),
     mode: zod_1.z.enum(['documentation', 'workflow', 'sop', 'kbChat']).optional().default('documentation'),
     conversationHistory: zod_1.z.array(zod_1.z.object({
         role: zod_1.z.enum(['user', 'assistant']),
         content: zod_1.z.string()
-    })).optional().default([])
+    })).optional().default([]),
+    attachments: zod_1.z.array(attachmentSchema).optional().default([])
 }).refine(data => data.documentId || data.documentContent, { message: 'Either documentId or documentContent is required' });
 const applySchema = zod_1.z.object({
     documentId: zod_1.z.string(),
@@ -73,11 +80,12 @@ router.post('/chat', async (req, res) => {
             logger_1.logger.info('RAG trigger detected, fetching knowledge base context', { question: body.question });
             ragContext = await fetchRAGContext(body.question);
         }
+        const documentPathInfo = body.documentPath ? `\nDocument location: ${body.documentPath}` : '';
         const messages = [
             { role: 'system', content: modePrompt },
             {
                 role: 'system',
-                content: `Current document title: "${documentTitle}"\n\nCurrent document content:\n\n${documentContent}`
+                content: `Current document title: "${documentTitle}"${documentPathInfo}\n\nCurrent document content:\n\n${documentContent}`
             }
         ];
         if (ragContext) {
@@ -85,6 +93,14 @@ router.post('/chat', async (req, res) => {
                 role: 'system',
                 content: `Additional context from the knowledge base (use this to enhance your response):\n\n${ragContext.context}`
             });
+        }
+        if (body.attachments && body.attachments.length > 0) {
+            const attachmentContext = body.attachments.map((att, i) => `[Attachment ${i + 1}: "${att.filename}"]\n${att.content}`).join('\n\n---\n\n');
+            messages.push({
+                role: 'system',
+                content: `User has uploaded the following files for context:\n\n${attachmentContext}`
+            });
+            logger_1.logger.info('Added attachment context', { count: body.attachments.length });
         }
         for (const msg of body.conversationHistory) {
             messages.push({ role: msg.role, content: msg.content });
