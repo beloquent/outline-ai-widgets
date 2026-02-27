@@ -1,25 +1,29 @@
 version: '3.8'
 
+# Add-on stack for Outline AI Widgets
+# Connects to an existing Outline deployment on the "outline_default" network.
+# Does NOT create Outline, its Postgres, or its Redis — those already exist.
+
 services:
-  # PostgreSQL with pgvector extension for RAG
-  postgres:
+  # PostgreSQL with pgvector for AI embeddings (separate from Outline's DB)
+  ai-postgres:
     image: pgvector/pgvector:pg16
-    container_name: outline-postgres
+    container_name: outline-ai-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: outline
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-outline_password}
-      POSTGRES_DB: outline
+      POSTGRES_USER: ai_service
+      POSTGRES_PASSWORD: ${AI_POSTGRES_PASSWORD:-ai_service_password}
+      POSTGRES_DB: ai_service
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ai_postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U outline -d outline"]
+      test: ["CMD-SHELL", "pg_isready -U ai_service -d ai_service"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - outline-internal
+      - widgets-internal
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -28,77 +32,15 @@ services:
       - /run/postgresql
       - /var/lib/postgresql/data/pg_stat_tmp
 
-  # Redis for caching, sessions, and queues
-  redis:
-    image: redis:7-alpine
-    container_name: outline-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - outline-internal
-    security_opt:
-      - no-new-privileges:true
-
-  # Official Outline container
-  outline:
-    image: docker.getoutline.com/outlinewiki/outline:latest
-    container_name: outline
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      SECRET_KEY: ${SECRET_KEY}
-      UTILS_SECRET: ${UTILS_SECRET}
-      DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD:-outline_password}@postgres:5432/outline
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
-      URL: ${URL}
-      PORT: 3000
-      FILE_STORAGE: local
-      FILE_STORAGE_LOCAL_ROOT_DIR: /var/lib/outline/data
-      FILE_STORAGE_UPLOAD_MAX_SIZE: 262144000
-      FORCE_HTTPS: ${FORCE_HTTPS:-true}
-      PGSSLMODE: disable
-      WEB_CONCURRENCY: 2
-      RATE_LIMITER_ENABLED: true
-      DEFAULT_LANGUAGE: en_US
-      ENABLE_UPDATES: false
-    volumes:
-      - outline_data:/var/lib/outline/data
-    networks:
-      - outline-internal
-    # Fix for yarn 4.x: Outline's package.json defines "packageManager": "yarn@4.11.0"
-    # but the container ships with yarn 1.22.22. Enable corepack to activate yarn 4.x
-    # so that both startup and exec commands (e.g. yarn db:migrate) work correctly.
-    command: >
-      sh -c "corepack enable && corepack prepare yarn@4.11.0 --activate && yarn start --env production"
-    security_opt:
-      - no-new-privileges:true
-    # Note: Port 3000 is internal only, accessed via widgets container
-
   # Widgets container (Gateway + Widget Framework + AI Service)
   widgets:
     build:
       context: ..
       dockerfile: docker/Dockerfile.widgets
-    # Alternative: Use pre-built image from registry
-    # image: your-registry/outline-widgets:latest
     container_name: outline-widgets
     restart: unless-stopped
     depends_on:
-      outline:
-        condition: service_started
-      postgres:
+      ai-postgres:
         condition: service_healthy
     ports:
       - "${GATEWAY_BIND_IP:-127.0.0.1}:5000:5000"
@@ -106,7 +48,7 @@ services:
       NODE_ENV: production
       # Gateway configuration
       GATEWAY_PORT: 5000
-      OUTLINE_URL: http://outline:3000
+      OUTLINE_URL: http://${OUTLINE_CONTAINER_NAME:-outline_outline_1}:3000
       WIDGET_URL: http://localhost:3003
       AI_SERVICE_URL: http://localhost:3001
       # Security settings
@@ -118,8 +60,7 @@ services:
       WIDGET_PORT: 3003
       # AI Service
       AI_SERVICE_PORT: 3001
-      DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD:-outline_password}@postgres:5432/outline
-      # AI service reaches Outline via the OUTLINE_URL already defined above
+      DATABASE_URL: postgres://ai_service:${AI_POSTGRES_PASSWORD:-ai_service_password}@ai-postgres:5432/ai_service
       AI_ADMIN_SECRET: ${AI_ADMIN_SECRET:-}
       AI_CSRF_SECRET: ${AI_CSRF_SECRET:-}
       # OpenAI for AI features (optional)
@@ -129,8 +70,8 @@ services:
       # Logging level (debug, info, warn, error)
       LOG_LEVEL: ${LOG_LEVEL:-info}
     networks:
-      - outline-internal
-      - outline-public
+      - outline_default
+      - widgets-internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:5000/widget-framework/health && wget -qO- http://localhost:3001/ai/health && wget -qO- http://localhost:5000/ > /dev/null"]
       interval: 30s
@@ -141,13 +82,13 @@ services:
       - no-new-privileges:true
 
 volumes:
-  postgres_data:
-  redis_data:
-  outline_data:
+  ai_postgres_data:
 
 networks:
-  outline-internal:
+  # Join the existing Outline network to reach outline_outline_1
+  outline_default:
+    external: true
+  # Internal network for widgets <-> ai-postgres
+  widgets-internal:
     driver: bridge
     internal: true
-  outline-public:
-    driver: bridge
