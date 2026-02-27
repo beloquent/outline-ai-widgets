@@ -39,7 +39,7 @@ RUN cd gateway && npm prune --production && cd .. && \
 FROM node:20-alpine AS production
 
 # Install runtime dependencies for health checks
-RUN apk add --no-cache netcat-openbsd
+RUN apk add --no-cache wget
 
 WORKDIR /app
 
@@ -72,10 +72,10 @@ ENV GATEWAY_PORT=5000
 ENV WIDGET_PORT=3003
 ENV AI_SERVICE_PORT=3001
 
-# Health check verifies all three services
+# Health check verifies all three services (Gateway is implicitly checked
+# because the widget-framework request routes through it)
 HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \
     CMD wget -qO- http://localhost:5000/widget-framework/health && \
-        wget -qO- http://localhost:3001/ai/health && \
-        wget -qO- http://localhost:5000/ > /dev/null || exit 1
+        wget -qO- http://localhost:3001/ai/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
