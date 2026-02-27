@@ -1,0 +1,159 @@
+# =============================================================================
+# Outline + AI Widgets — Portainer Stack
+# =============================================================================
+# BEFORE DEPLOYING: Build the widgets image on the Docker host:
+#
+#   cd ~/outline-ai-widgets-main
+#   git pull origin claude/code-review-uvQyF
+#   docker build -t outline-widgets:latest -f docker/Dockerfile.widgets .
+#
+# Then paste this file into Portainer > Stacks > Add stack > Web editor
+# and set the environment variables below the editor.
+#
+# REQUIRED environment variables (set in Portainer's "Environment variables"):
+#   SECRET_KEY          — openssl rand -hex 32
+#   UTILS_SECRET        — openssl rand -hex 32
+#   URL                 — https://your-domain.com
+#   POSTGRES_PASSWORD   — use only alphanumeric + dashes (no @ # ! $ %)
+#   REDIS_PASSWORD      — same character advice
+#
+# OPTIONAL environment variables:
+#   OPENAI_API_KEY, OUTLINE_API_KEY, AI_ADMIN_SECRET, AI_CSRF_SECRET
+#   LOG_LEVEL (default: info), FORCE_HTTPS (default: true)
+#   ENABLE_CSP, CSP_REPORT_ONLY, ENFORCE_ORIGIN_CHECK, TRUSTED_ORIGINS
+#   GATEWAY_BIND_IP (default: 127.0.0.1)
+# =============================================================================
+
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: outline-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: outline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-outline_password}
+      POSTGRES_DB: outline
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outline -d outline"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - outline-internal
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+      - /var/lib/postgresql/data/pg_stat_tmp
+
+  redis:
+    image: redis:7-alpine
+    container_name: outline-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - outline-internal
+    security_opt:
+      - no-new-privileges:true
+
+  outline:
+    image: docker.getoutline.com/outlinewiki/outline:latest
+    container_name: outline
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      SECRET_KEY: ${SECRET_KEY}
+      UTILS_SECRET: ${UTILS_SECRET}
+      DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD:-outline_password}@postgres:5432/outline
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
+      URL: ${URL}
+      PORT: 3000
+      FILE_STORAGE: local
+      FILE_STORAGE_LOCAL_ROOT_DIR: /var/lib/outline/data
+      FILE_STORAGE_UPLOAD_MAX_SIZE: 262144000
+      FORCE_HTTPS: ${FORCE_HTTPS:-true}
+      PGSSLMODE: disable
+      WEB_CONCURRENCY: 2
+      RATE_LIMITER_ENABLED: true
+      DEFAULT_LANGUAGE: en_US
+      ENABLE_UPDATES: false
+    volumes:
+      - outline_data:/var/lib/outline/data
+    networks:
+      - outline-internal
+    # Fix: Outline's package.json requires yarn 4.11.0 but container has 1.22.22
+    command: >
+      sh -c "corepack enable && corepack prepare yarn@4.11.0 --activate && yarn start --env production"
+    security_opt:
+      - no-new-privileges:true
+
+  widgets:
+    image: outline-widgets:latest
+    container_name: outline-widgets
+    restart: unless-stopped
+    depends_on:
+      outline:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${GATEWAY_BIND_IP:-127.0.0.1}:5000:5000"
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 5000
+      OUTLINE_URL: http://outline:3000
+      WIDGET_URL: http://localhost:3003
+      AI_SERVICE_URL: http://localhost:3001
+      ENABLE_CSP: ${ENABLE_CSP:-true}
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-false}
+      ENFORCE_ORIGIN_CHECK: ${ENFORCE_ORIGIN_CHECK:-true}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+      WIDGET_PORT: 3003
+      AI_SERVICE_PORT: 3001
+      DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD:-outline_password}@postgres:5432/outline
+      AI_ADMIN_SECRET: ${AI_ADMIN_SECRET:-}
+      AI_CSRF_SECRET: ${AI_CSRF_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OUTLINE_API_KEY: ${OUTLINE_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - outline-internal
+      - outline-public
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/widget-framework/health && wget -qO- http://localhost:3001/ai/health && wget -qO- http://localhost:5000/ > /dev/null"]
+      interval: 30s
+      timeout: 15s
+      start_period: 90s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+  redis_data:
+  outline_data:
+
+networks:
+  outline-internal:
+    driver: bridge
+    internal: true
+  outline-public:
+    driver: bridge
