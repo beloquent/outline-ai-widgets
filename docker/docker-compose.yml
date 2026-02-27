@@ -21,16 +21,12 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ai_service -d ai_service"]
       interval: 10s
       timeout: 5s
+      start_period: 30s
       retries: 5
     networks:
       - widgets-internal
     security_opt:
       - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /run/postgresql
-      - /var/lib/postgresql/data/pg_stat_tmp
 
   # Widgets container (Gateway + Widget Framework + AI Service)
   widgets:
