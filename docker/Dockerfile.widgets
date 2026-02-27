@@ -39,7 +39,7 @@ RUN cd gateway && npm prune --production && cd .. && \
 FROM node:20-alpine AS production
 
 # Install runtime dependencies for health checks
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget netcat-openbsd
 
 WORKDIR /app
 
