@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-const PORT = process.env.WIDGET_FRAMEWORK_PORT || 3003;
+const PORT = process.env.WIDGET_PORT || process.env.WIDGET_FRAMEWORK_PORT || 3003;
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 const CURRENT_LOG_LEVEL = (process.env.LOG_LEVEL || 'info');
 function log(level, message, meta) {

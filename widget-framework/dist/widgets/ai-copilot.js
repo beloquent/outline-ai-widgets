@@ -247,7 +247,8 @@ var AICopilotWidget = class {
   }
   async handleFileUpload(files) {
     console.log("[AI Copilot] handleFileUpload called, files:", files?.length);
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0)
+      return;
     for (const file of Array.from(files)) {
       const ext = "." + file.name.split(".").pop()?.toLowerCase();
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
@@ -320,7 +321,8 @@ var AICopilotWidget = class {
     this.attachAttachmentListeners();
   }
   renderAttachmentChips() {
-    if (this.attachments.length === 0) return "";
+    if (this.attachments.length === 0)
+      return "";
     const theme = getOutlineTheme();
     return this.attachments.map((att) => `
       <div class="ai-attachment-chip" data-id="${att.id}">
@@ -342,7 +344,8 @@ var AICopilotWidget = class {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
-        if (id) this.removeAttachment(id);
+        if (id)
+          this.removeAttachment(id);
       });
     });
   }
@@ -361,7 +364,8 @@ var AICopilotWidget = class {
     }
   }
   injectGlobalStyles() {
-    if (document.getElementById("ai-copilot-global-styles")) return;
+    if (document.getElementById("ai-copilot-global-styles"))
+      return;
     const style = document.createElement("style");
     style.id = "ai-copilot-global-styles";
     style.textContent = `
@@ -458,7 +462,8 @@ var AICopilotWidget = class {
     return colors[mode];
   }
   render() {
-    if (!this.container) return;
+    if (!this.container)
+      return;
     const currentInput = this.container.querySelector("#ai-input");
     if (currentInput) {
       this.pendingInputValue = currentInput.value;
@@ -1461,7 +1466,8 @@ var AICopilotWidget = class {
     return html;
   }
   attachEventListeners() {
-    if (!this.container || this.listenersAttached) return;
+    if (!this.container || this.listenersAttached)
+      return;
     this.listenersAttached = true;
     this.container.addEventListener("click", (e) => {
       const target = e.target;
@@ -1641,7 +1647,8 @@ var AICopilotWidget = class {
   async sendMessage() {
     const input = this.container?.querySelector("#ai-input");
     const message = input?.value.trim();
-    if (!message || this.isLoading) return;
+    if (!message || this.isLoading)
+      return;
     this.messages.push({ role: "user", content: message });
     input.value = "";
     this.pendingInputValue = "";
@@ -1729,7 +1736,8 @@ var AICopilotWidget = class {
     }
   }
   async loadCollections() {
-    if (this.collectionsLoading) return;
+    if (this.collectionsLoading)
+      return;
     this.collectionsLoading = true;
     this.collectionsError = null;
     console.log("[AI Copilot] Loading collections...");
@@ -1778,7 +1786,8 @@ var AICopilotWidget = class {
     }
   }
   async createDraft() {
-    if (!this.draftTitle.trim() || !this.selectedCollectionId || this.isCreatingDraft) return;
+    if (!this.draftTitle.trim() || !this.selectedCollectionId || this.isCreatingDraft)
+      return;
     const isSavingAsDraft = this.selectedCollectionId === "__drafts__";
     this.isCreatingDraft = true;
     this.render();
@@ -1883,7 +1892,8 @@ var AICopilotWidget = class {
         const action = target.dataset.action;
         const index = parseInt(target.dataset.index || "0", 10);
         const message = this.messages[index];
-        if (!message || message.role !== "assistant") return;
+        if (!message || message.role !== "assistant")
+          return;
         if (action === "copy") {
           this.copyToClipboard(message.content, target);
         } else if (action === "insert") {
@@ -2064,7 +2074,8 @@ var AICopilotWidget = class {
         nodes.push(paragraphType.create({}, text));
       }
     }
-    if (nodes.length === 0) return;
+    if (nodes.length === 0)
+      return;
     const Fragment = state.doc.constructor.prototype.constructor.prototype.constructor;
     const fragment = Fragment?.from ? Fragment.from(nodes) : nodes;
     const tr = state.tr;
@@ -2107,7 +2118,8 @@ var AICopilotWidget = class {
     const segments = [];
     const allMatches = [];
     for (const { regex, mark } of patterns) {
-      if (!mark) continue;
+      if (!mark)
+        continue;
       regex.lastIndex = 0;
       let match;
       while ((match = regex.exec(text)) !== null) {
@@ -2121,7 +2133,8 @@ var AICopilotWidget = class {
     }
     allMatches.sort((a, b) => a.index - b.index);
     for (const match of allMatches) {
-      if (match.index < lastIndex) continue;
+      if (match.index < lastIndex)
+        continue;
       if (match.index > lastIndex) {
         segments.push({ text: text.slice(lastIndex, match.index), marks: [] });
       }
@@ -2366,8 +2379,8 @@ var definition = {
   onContextChange: (context) => copilotWidget.onContextChange(context)
 };
 getWidgetSDK().register(definition);
-var index_default = definition;
+var ai_copilot_default = definition;
 export {
-  index_default as default
+  ai_copilot_default as default
 };
 //# sourceMappingURL=ai-copilot.js.map

@@ -150,9 +150,11 @@ var AISettingsWidget = class {
     }
   }
   async saveConfig() {
-    if (!this.container || this.isSaving) return;
+    if (!this.container || this.isSaving)
+      return;
     const form = this.container.querySelector("#ai-settings-form");
-    if (!form) return;
+    if (!form)
+      return;
     const formData = new FormData(form);
     const openaiKey = formData.get("openaiApiKey");
     const outlineKey = formData.get("outlineApiKey");
@@ -211,7 +213,8 @@ var AISettingsWidget = class {
     this.hide();
   }
   async startReindex() {
-    if (this.isReindexing) return;
+    if (this.isReindexing)
+      return;
     this.isReindexing = true;
     this.reindexStatus = { status: "starting" };
     this.message = null;
@@ -904,7 +907,8 @@ var AISettingsWidget = class {
     const tabs = this.container?.querySelectorAll(".ai-settings-tab");
     const modeTextareas = this.container?.querySelectorAll(".ai-settings-textarea[data-mode]");
     overlay?.addEventListener("click", (e) => {
-      if (e.target === overlay) this.close();
+      if (e.target === overlay)
+        this.close();
     });
     overlay?.addEventListener("wheel", (e) => {
       if (!modal?.contains(e.target)) {
@@ -959,8 +963,8 @@ var definition = {
   onUnmount: () => settingsWidget.unmount()
 };
 getWidgetSDK().register(definition);
-var index_default = definition;
+var ai_settings_default = definition;
 export {
-  index_default as default
+  ai_settings_default as default
 };
 //# sourceMappingURL=ai-settings.js.map
