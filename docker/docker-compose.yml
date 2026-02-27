@@ -17,7 +17,6 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ai_postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ai_service -d ai_service"]
       interval: 10s
