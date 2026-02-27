@@ -119,8 +119,7 @@ services:
       # AI Service
       AI_SERVICE_PORT: 3001
       DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD:-outline_password}@postgres:5432/outline
-      # CRITICAL: AI service needs to reach Outline via internal container network
-      OUTLINE_URL: http://outline:3000
+      # AI service reaches Outline via the OUTLINE_URL already defined above
       AI_ADMIN_SECRET: ${AI_ADMIN_SECRET:-}
       AI_CSRF_SECRET: ${AI_CSRF_SECRET:-}
       # OpenAI for AI features (optional)
