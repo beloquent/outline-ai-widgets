@@ -1,13 +1,38 @@
-import { Pool } from 'pg';
+import { Pool, PoolConfig } from 'pg';
 import { config } from '../config/settings';
 import { logger } from '../config/logger';
 
-export const pool = new Pool({
-  connectionString: config.databaseUrl,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+function buildPoolConfig(): PoolConfig {
+  const base: PoolConfig = {
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  };
+
+  if (!config.databaseUrl) {
+    return base;
+  }
+
+  // Parse DATABASE_URL explicitly to handle special characters in passwords
+  // that break pg's internal connection string parser
+  try {
+    const url = new URL(config.databaseUrl);
+    return {
+      ...base,
+      host: url.hostname,
+      port: parseInt(url.port || '5432', 10),
+      database: url.pathname.slice(1),
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      ssl: url.searchParams.get('sslmode') === 'require' ? { rejectUnauthorized: false } : undefined,
+    };
+  } catch {
+    // Fallback to connectionString if URL parsing fails
+    return { ...base, connectionString: config.databaseUrl };
+  }
+}
+
+export const pool = new Pool(buildPoolConfig());
 
 pool.on('error', (err: Error) => {
   logger.error('Unexpected database pool error:', err);
