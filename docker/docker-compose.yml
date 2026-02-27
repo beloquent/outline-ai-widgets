@@ -14,6 +14,7 @@ services:
       POSTGRES_USER: ai_service
       POSTGRES_PASSWORD: ${AI_POSTGRES_PASSWORD:-ai_service_password}
       POSTGRES_DB: ai_service
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ai_postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
