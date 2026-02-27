@@ -2,6 +2,7 @@ import http, { IncomingMessage, ServerResponse } from 'http';
 import https from 'https';
 import httpProxy from 'http-proxy';
 import crypto from 'crypto';
+import zlib from 'zlib';
 import { URL } from 'url';
 
 const GATEWAY_PORT = parseInt(process.env.GATEWAY_PORT || '5000', 10);
@@ -69,17 +70,19 @@ async function fetchBootstrapHash(): Promise<string> {
 }
 
 function getWidgetBootstrapScript(integrity: string): string {
-  const integrityAttr = integrity ? ` integrity="${integrity}" crossorigin="anonymous"` : '';
   return `
 <script>
 (function() {
+  console.log('[Widget Framework] Injection active - loading bootstrap');
   var script = document.createElement('script');
   script.src = '/widget-framework/bootstrap.js';
   script.async = true;${integrity ? `
-  script.integrity = '${integrity}';
-  script.crossOrigin = 'anonymous';` : ''}
-  script.onerror = function() {
-    console.warn('[Widget Framework] Bootstrap failed to load');
+  script.integrity = '${integrity}';` : ''}
+  script.onerror = function(e) {
+    console.error('[Widget Framework] Bootstrap failed to load', e);
+  };
+  script.onload = function() {
+    console.log('[Widget Framework] Bootstrap script loaded successfully');
   };
   document.head.appendChild(script);
 })();
@@ -338,20 +341,29 @@ const outlineProxy = httpProxy.createProxyServer({
   target: OUTLINE_URL,
   selfHandleResponse: true,
   ws: true,
+  changeOrigin: true,
 });
 
 const widgetProxy = httpProxy.createProxyServer({
   target: WIDGET_URL,
+  changeOrigin: true,
 });
 
 const aiProxy = httpProxy.createProxyServer({
   target: AI_SERVICE_URL,
+  changeOrigin: true,
 });
 
 outlineProxy.on('proxyReq', (proxyReq: http.ClientRequest, req: IncomingMessage) => {
+  // Forward proxy headers so Outline sees the original protocol/host
+  // (critical when FORCE_HTTPS=true to prevent redirect loops)
+  proxyReq.setHeader('X-Forwarded-Proto', req.headers['x-forwarded-proto'] || 'http');
+  proxyReq.setHeader('X-Forwarded-Host', req.headers['host'] || '');
+  proxyReq.setHeader('X-Forwarded-For', req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
+
   const acceptHeader = req.headers['accept'] || '';
   const isHtmlRequest = acceptHeader.includes('text/html') || req.url === '/' || !req.url?.includes('.');
-  
+
   if (isHtmlRequest && (req.method === 'GET' || req.method === 'HEAD')) {
     proxyReq.setHeader('Accept-Encoding', 'identity');
   }
@@ -359,17 +371,28 @@ outlineProxy.on('proxyReq', (proxyReq: http.ClientRequest, req: IncomingMessage)
 
 outlineProxy.on('proxyRes', async (proxyRes: IncomingMessage, req: IncomingMessage, res: ServerResponse) => {
   const contentType = proxyRes.headers['content-type'] || '';
+  const contentEncoding = proxyRes.headers['content-encoding'] || '';
+  const statusCode = proxyRes.statusCode || 200;
   const isHtml = contentType.includes('text/html');
   const isGetRequest = req.method === 'GET' || req.method === 'HEAD';
-  
+
+  log('debug', `Outline response for ${req.url}`, {
+    statusCode,
+    contentType,
+    contentEncoding: contentEncoding || 'none',
+    isHtml,
+    isGetRequest,
+  });
+
   const headers = { ...proxyRes.headers };
-  
+
   if (isHtml && isGetRequest) {
     delete headers['content-length'];
     delete headers['content-encoding'];
 
     const bootstrapHash = await fetchBootstrapHash();
-    
+    log('debug', 'Bootstrap hash for injection', { hash: bootstrapHash || '(none)' });
+
     if (ENABLE_CSP) {
       const cspHeader = generateCspHeader(bootstrapHash);
       const cspHeaderName = CSP_REPORT_ONLY ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
@@ -380,22 +403,56 @@ outlineProxy.on('proxyRes', async (proxyRes: IncomingMessage, req: IncomingMessa
     headers['X-Frame-Options'] = 'SAMEORIGIN';
     headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
 
-    res.writeHead(proxyRes.statusCode || 200, headers);
-    
+    res.writeHead(statusCode, headers);
+
+    // Decompress response if Outline sent compressed content despite Accept-Encoding: identity
+    let stream: NodeJS.ReadableStream = proxyRes;
+    if (contentEncoding === 'gzip') {
+      log('info', 'Decompressing gzip response from Outline');
+      stream = proxyRes.pipe(zlib.createGunzip());
+    } else if (contentEncoding === 'deflate') {
+      log('info', 'Decompressing deflate response from Outline');
+      stream = proxyRes.pipe(zlib.createInflate());
+    } else if (contentEncoding === 'br') {
+      log('info', 'Decompressing brotli response from Outline');
+      stream = proxyRes.pipe(zlib.createBrotliDecompress());
+    }
+
     let body = '';
-    proxyRes.on('data', (chunk: Buffer) => {
+    stream.on('data', (chunk: Buffer) => {
       body += chunk.toString();
     });
-    proxyRes.on('end', () => {
+    stream.on('end', () => {
+      const hasHeadTag = body.includes('</head>');
+      log('debug', 'HTML body analysis', {
+        bodyLength: body.length,
+        hasHeadTag,
+        firstChars: body.substring(0, 100),
+      });
+
+      if (!hasHeadTag) {
+        log('warn', 'No </head> tag found in HTML response - widget injection skipped');
+        res.end(body);
+        return;
+      }
+
       const widgetScript = getWidgetBootstrapScript(bootstrapHash);
       const injectedBody = body.replace(
         '</head>',
         `${widgetScript}</head>`
       );
+      log('info', 'Widget bootstrap script injected into HTML response');
       res.end(injectedBody);
     });
+    stream.on('error', (err: Error) => {
+      log('error', 'Failed to decompress response from Outline', { error: err.message });
+      res.end();
+    });
   } else {
-    res.writeHead(proxyRes.statusCode || 200, headers);
+    if (isGetRequest && !isHtml) {
+      log('debug', `Non-HTML response from Outline, skipping injection`, { contentType, statusCode });
+    }
+    res.writeHead(statusCode, headers);
     proxyRes.pipe(res);
   }
 });

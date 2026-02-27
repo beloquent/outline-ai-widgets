@@ -1,0 +1,15 @@
+.git
+*.md
+LICENSE
+.env
+.env.*
+!docker/.env.example
+
+**/node_modules
+**/dist
+
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store

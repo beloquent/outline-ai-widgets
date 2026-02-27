@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.WIDGET_FRAMEWORK_PORT || 3003;
+const PORT = process.env.WIDGET_PORT || process.env.WIDGET_FRAMEWORK_PORT || 3003;
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
