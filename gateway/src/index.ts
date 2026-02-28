@@ -11,6 +11,7 @@ const WIDGET_URL = process.env.WIDGET_URL || `http://localhost:${process.env.WID
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:3001';
 const CSP_REPORT_ONLY = process.env.CSP_REPORT_ONLY === 'true';
 const ENABLE_CSP = process.env.ENABLE_CSP !== 'false';
+const GATEWAY_DEFAULT_PROTO = process.env.GATEWAY_DEFAULT_PROTO || 'https';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
@@ -357,7 +358,7 @@ const aiProxy = httpProxy.createProxyServer({
 outlineProxy.on('proxyReq', (proxyReq: http.ClientRequest, req: IncomingMessage) => {
   // Forward proxy headers so Outline sees the original protocol/host
   // (critical when FORCE_HTTPS=true to prevent redirect loops)
-  proxyReq.setHeader('X-Forwarded-Proto', req.headers['x-forwarded-proto'] || 'http');
+  proxyReq.setHeader('X-Forwarded-Proto', req.headers['x-forwarded-proto'] || GATEWAY_DEFAULT_PROTO);
   proxyReq.setHeader('X-Forwarded-Host', req.headers['host'] || '');
   proxyReq.setHeader('X-Forwarded-For', req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
 

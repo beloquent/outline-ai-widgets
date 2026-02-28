@@ -104,6 +104,9 @@ services:
       OUTLINE_URL: http://outline:3000
       WIDGET_URL: http://localhost:3003
       AI_SERVICE_URL: http://localhost:3001
+      # Protocol fallback when reverse proxy doesn't set X-Forwarded-Proto
+      # Set to 'http' for non-TLS deployments
+      GATEWAY_DEFAULT_PROTO: ${GATEWAY_DEFAULT_PROTO:-https}
       # Security settings
       ENABLE_CSP: ${ENABLE_CSP:-true}
       CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-false}
