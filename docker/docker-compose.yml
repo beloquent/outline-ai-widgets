@@ -96,7 +96,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${GATEWAY_BIND_IP:-127.0.0.1}:5000:5000"
+      - "${GATEWAY_BIND_IP:-0.0.0.0}:5000:5000"
     environment:
       NODE_ENV: production
       # Gateway configuration
