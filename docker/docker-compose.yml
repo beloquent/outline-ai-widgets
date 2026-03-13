@@ -22,11 +22,6 @@ services:
       - outline-internal
     security_opt:
       - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /run/postgresql
-      - /var/lib/postgresql/data/pg_stat_tmp
 
   # Redis for caching, sessions, and queues
   redis:
