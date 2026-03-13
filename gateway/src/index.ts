@@ -70,17 +70,15 @@ async function fetchBootstrapHash(): Promise<string> {
   return cachedBootstrapHash;
 }
 
-function getWidgetBootstrapScript(integrity: string, nonce?: string): string {
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
+function getWidgetBootstrapScript(integrity: string): string {
   return `
-<script${nonceAttr}>
+<script>
 (function() {
   console.log('[Widget Framework] Injection active - loading bootstrap');
   var script = document.createElement('script');
   script.src = '/widget-framework/bootstrap.js';
   script.async = true;${integrity ? `
-  script.integrity = '${integrity}';` : ''}${nonce ? `
-  script.nonce = '${nonce}';` : ''}
+  script.integrity = '${integrity}';` : ''}
   script.onerror = function(e) {
     console.error('[Widget Framework] Bootstrap failed to load', e);
   };
@@ -91,16 +89,6 @@ function getWidgetBootstrapScript(integrity: string, nonce?: string): string {
 })();
 </script>
 `;
-}
-
-function extractNonce(html: string): string | undefined {
-  // Match nonce from Outline's CSP meta tag or inline script tags
-  const metaMatch = html.match(/<meta[^>]*content="[^"]*'nonce-([A-Za-z0-9+/=]+)'[^"]*"/);
-  if (metaMatch) return metaMatch[1];
-  // Fallback: extract nonce from any existing script tag
-  const scriptMatch = html.match(/<script[^>]*\bnonce="([A-Za-z0-9+/=]+)"/);
-  if (scriptMatch) return scriptMatch[1];
-  return undefined;
 }
 
 function generateCspHeader(bootstrapHash: string): string {
@@ -455,14 +443,19 @@ outlineProxy.on('proxyRes', async (proxyRes: IncomingMessage, req: IncomingMessa
         return;
       }
 
-      const nonce = extractNonce(body);
-      log('info', 'CSP nonce extraction', { found: !!nonce, nonce: nonce || '(none)' });
-      const widgetScript = getWidgetBootstrapScript(bootstrapHash, nonce);
-      const injectedBody = body.replace(
+      // Remove Outline's CSP meta tag so our header-based CSP takes precedence
+      // (Outline uses nonce-based CSP in meta tags which blocks our injected script)
+      const cspMetaRegex = /<meta[^>]*http-equiv\s*=\s*["']Content-Security-Policy["'][^>]*>/gi;
+      const strippedBody = body.replace(cspMetaRegex, '<!-- CSP meta removed by Gateway -->');
+      const cspMetaRemoved = strippedBody !== body;
+      log('info', 'CSP meta tag handling', { removed: cspMetaRemoved });
+
+      const widgetScript = getWidgetBootstrapScript(bootstrapHash);
+      const injectedBody = strippedBody.replace(
         '</head>',
         `${widgetScript}</head>`
       );
-      log('info', 'Widget bootstrap script injected into HTML response');
+      log('info', `Widget bootstrap injected into ${req.url}`);
       res.end(injectedBody);
     });
     stream.on('error', (err: Error) => {
