@@ -64,15 +64,17 @@ async function fetchBootstrapHash() {
     }
     return cachedBootstrapHash;
 }
-function getWidgetBootstrapScript(integrity) {
+function getWidgetBootstrapScript(integrity, nonce) {
+    const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
     return `
-<script>
+<script${nonceAttr}>
 (function() {
   console.log('[Widget Framework] Injection active - loading bootstrap');
   var script = document.createElement('script');
   script.src = '/widget-framework/bootstrap.js';
   script.async = true;${integrity ? `
-  script.integrity = '${integrity}';` : ''}
+  script.integrity = '${integrity}';` : ''}${nonce ? `
+  script.nonce = '${nonce}';` : ''}
   script.onerror = function(e) {
     console.error('[Widget Framework] Bootstrap failed to load', e);
   };
@@ -83,6 +85,17 @@ function getWidgetBootstrapScript(integrity) {
 })();
 </script>
 `;
+}
+function extractNonce(html) {
+    // Match nonce from Outline's CSP meta tag or inline script tags
+    const metaMatch = html.match(/<meta[^>]*content="[^"]*'nonce-([A-Za-z0-9+/=]+)'[^"]*"/);
+    if (metaMatch)
+        return metaMatch[1];
+    // Fallback: extract nonce from any existing script tag
+    const scriptMatch = html.match(/<script[^>]*\bnonce="([A-Za-z0-9+/=]+)"/);
+    if (scriptMatch)
+        return scriptMatch[1];
+    return undefined;
 }
 function generateCspHeader(bootstrapHash) {
     const directives = [
@@ -393,7 +406,9 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
                 res.end(body);
                 return;
             }
-            const widgetScript = getWidgetBootstrapScript(bootstrapHash);
+            const nonce = extractNonce(body);
+            log('info', 'CSP nonce extraction', { found: !!nonce, nonce: nonce || '(none)' });
+            const widgetScript = getWidgetBootstrapScript(bootstrapHash, nonce);
             const injectedBody = body.replace('</head>', `${widgetScript}</head>`);
             log('info', 'Widget bootstrap script injected into HTML response');
             res.end(injectedBody);
