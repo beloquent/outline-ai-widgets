@@ -14,6 +14,7 @@ const WIDGET_URL = process.env.WIDGET_URL || `http://localhost:${process.env.WID
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:3001';
 const CSP_REPORT_ONLY = process.env.CSP_REPORT_ONLY === 'true';
 const ENABLE_CSP = process.env.ENABLE_CSP !== 'false';
+const GATEWAY_DEFAULT_PROTO = process.env.GATEWAY_DEFAULT_PROTO || 'https';
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -320,7 +321,7 @@ const aiProxy = http_proxy_1.default.createProxyServer({
 outlineProxy.on('proxyReq', (proxyReq, req) => {
     // Forward proxy headers so Outline sees the original protocol/host
     // (critical when FORCE_HTTPS=true to prevent redirect loops)
-    proxyReq.setHeader('X-Forwarded-Proto', req.headers['x-forwarded-proto'] || 'http');
+    proxyReq.setHeader('X-Forwarded-Proto', req.headers['x-forwarded-proto'] || GATEWAY_DEFAULT_PROTO);
     proxyReq.setHeader('X-Forwarded-Host', req.headers['host'] || '');
     proxyReq.setHeader('X-Forwarded-For', req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
     const acceptHeader = req.headers['accept'] || '';
@@ -346,6 +347,11 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
     if (isHtml && isGetRequest) {
         delete headers['content-length'];
         delete headers['content-encoding'];
+        // Remove any existing CSP headers from Outline to prevent conflicts
+        // (Outline sends lowercase headers; browsers enforce the most restrictive
+        // of multiple CSP headers, which would block our injected inline script)
+        delete headers['content-security-policy'];
+        delete headers['content-security-policy-report-only'];
         const bootstrapHash = await fetchBootstrapHash();
         log('debug', 'Bootstrap hash for injection', { hash: bootstrapHash || '(none)' });
         if (ENABLE_CSP) {

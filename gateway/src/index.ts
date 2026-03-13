@@ -391,6 +391,12 @@ outlineProxy.on('proxyRes', async (proxyRes: IncomingMessage, req: IncomingMessa
     delete headers['content-length'];
     delete headers['content-encoding'];
 
+    // Remove any existing CSP headers from Outline to prevent conflicts
+    // (Outline sends lowercase headers; browsers enforce the most restrictive
+    // of multiple CSP headers, which would block our injected inline script)
+    delete headers['content-security-policy'];
+    delete headers['content-security-policy-report-only'];
+
     const bootstrapHash = await fetchBootstrapHash();
     log('debug', 'Bootstrap hash for injection', { hash: bootstrapHash || '(none)' });
 
