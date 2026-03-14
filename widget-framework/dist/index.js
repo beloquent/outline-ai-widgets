@@ -333,6 +333,7 @@ var WidgetSDK = class {
   }
   setupNavigationListener() {
     let lastPathname = window.location.pathname;
+    let pendingCheck = false;
     const checkNavigation = () => {
       if (window.location.pathname !== lastPathname) {
         lastPathname = window.location.pathname;
@@ -340,18 +341,27 @@ var WidgetSDK = class {
         this.handleNavigationChange();
       }
     };
-    window.addEventListener("popstate", checkNavigation);
+    const deferredCheck = () => {
+      if (pendingCheck)
+        return;
+      pendingCheck = true;
+      setTimeout(() => {
+        pendingCheck = false;
+        checkNavigation();
+      }, 50);
+    };
+    window.addEventListener("popstate", deferredCheck);
     const originalPushState = history.pushState;
     history.pushState = function(...args) {
       originalPushState.apply(this, args);
-      checkNavigation();
+      deferredCheck();
     };
     const originalReplaceState = history.replaceState;
     history.replaceState = function(...args) {
       originalReplaceState.apply(this, args);
-      checkNavigation();
+      deferredCheck();
     };
-    setInterval(checkNavigation, 1e3);
+    setInterval(checkNavigation, 2e3);
   }
   async handleNavigationChange() {
     const context = await this.context.getContext();
@@ -409,6 +419,7 @@ var MountOrchestrator = class {
       left: 0;
       width: 0;
       height: 0;
+      overflow: hidden;
       pointer-events: none;
       z-index: 1000;
     `;
@@ -465,7 +476,7 @@ var MountOrchestrator = class {
     const base = `
       position: fixed;
       z-index: ${zIndex};
-      pointer-events: auto;
+      pointer-events: none;
       box-sizing: border-box;
     `;
     switch (config.type) {

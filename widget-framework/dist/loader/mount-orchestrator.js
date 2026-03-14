@@ -33,6 +33,7 @@ export class MountOrchestrator {
       left: 0;
       width: 0;
       height: 0;
+      overflow: hidden;
       pointer-events: none;
       z-index: 1000;
     `;
@@ -89,7 +90,7 @@ export class MountOrchestrator {
         const base = `
       position: fixed;
       z-index: ${zIndex};
-      pointer-events: auto;
+      pointer-events: none;
       box-sizing: border-box;
     `;
         switch (config.type) {

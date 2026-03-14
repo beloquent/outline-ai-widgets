@@ -86,6 +86,7 @@ export class WidgetSDK {
     }
     setupNavigationListener() {
         let lastPathname = window.location.pathname;
+        let pendingCheck = false;
         const checkNavigation = () => {
             if (window.location.pathname !== lastPathname) {
                 lastPathname = window.location.pathname;
@@ -93,18 +94,30 @@ export class WidgetSDK {
                 this.handleNavigationChange();
             }
         };
-        window.addEventListener('popstate', checkNavigation);
+        // Deferred check — yields control back to the app (React Router, editor init)
+        // before running widget context updates. This prevents race conditions where
+        // widget API calls fire during ProseMirror editor initialization.
+        const deferredCheck = () => {
+            if (pendingCheck)
+                return;
+            pendingCheck = true;
+            setTimeout(() => {
+                pendingCheck = false;
+                checkNavigation();
+            }, 50);
+        };
+        window.addEventListener('popstate', deferredCheck);
         const originalPushState = history.pushState;
         history.pushState = function (...args) {
             originalPushState.apply(this, args);
-            checkNavigation();
+            deferredCheck();
         };
         const originalReplaceState = history.replaceState;
         history.replaceState = function (...args) {
             originalReplaceState.apply(this, args);
-            checkNavigation();
+            deferredCheck();
         };
-        setInterval(checkNavigation, 1000);
+        setInterval(checkNavigation, 2000);
     }
     async handleNavigationChange() {
         const context = await this.context.getContext();
