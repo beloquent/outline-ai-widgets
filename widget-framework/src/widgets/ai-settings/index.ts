@@ -1,6 +1,7 @@
 import type { WidgetDefinition, WidgetContext } from '../../sdk/types';
 
 const AI_SERVICE_URL = '/ai';
+const WIDGET_VERSION = '1.2.0';
 
 interface ModePrompts {
   documentation: string;
@@ -521,6 +522,15 @@ class AISettingsWidget {
           font-size: 16px;
           font-weight: 500;
         }
+        .ai-settings-version {
+          font-size: 11px;
+          color: ${theme.textSecondary};
+          background: ${theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'};
+          padding: 2px 8px;
+          border-radius: 10px;
+          margin-left: 10px;
+          font-weight: 400;
+        }
         .ai-settings-close {
           background: none;
           border: none;
@@ -827,7 +837,7 @@ class AISettingsWidget {
       <div class="ai-settings-overlay" id="ai-settings-overlay">
         <div class="ai-settings-modal">
           <div class="ai-settings-header">
-            <h2>AI Copilot Settings</h2>
+            <h2>AI Copilot Settings <span class="ai-settings-version">v${WIDGET_VERSION}</span></h2>
             <button class="ai-settings-close" id="ai-settings-close" title="Close">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -1075,7 +1085,7 @@ const settingsWidget = new AISettingsWidget();
 const definition: WidgetDefinition = {
   id: 'ai-settings',
   name: 'AI Settings',
-  version: '1.0.0',
+  version: WIDGET_VERSION,
   description: 'Configure AI Copilot settings',
   mountPoint: {
     type: 'modal',

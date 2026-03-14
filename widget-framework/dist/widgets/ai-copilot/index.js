@@ -1,4 +1,5 @@
 const AI_SERVICE_URL = '/ai';
+const WIDGET_VERSION = '1.2.0';
 const MODES = [
     {
         id: 'documentation',
@@ -2508,7 +2509,7 @@ const copilotWidget = new AICopilotWidget();
 const definition = {
     id: 'ai-copilot',
     name: 'AI Copilot',
-    version: '1.1.0',
+    version: WIDGET_VERSION,
     description: 'AI-powered document assistant',
     mountPoint: {
         type: 'floating',

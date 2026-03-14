@@ -1,5 +1,6 @@
 // src/widgets/ai-copilot/index.ts
 var AI_SERVICE_URL = "/ai";
+var WIDGET_VERSION = "1.2.0";
 var MODES = [
   {
     id: "documentation",
@@ -2416,7 +2417,7 @@ var copilotWidget = new AICopilotWidget();
 var definition = {
   id: "ai-copilot",
   name: "AI Copilot",
-  version: "1.1.0",
+  version: WIDGET_VERSION,
   description: "AI-powered document assistant",
   mountPoint: {
     type: "floating",
