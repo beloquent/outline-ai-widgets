@@ -469,6 +469,17 @@ const server = http_1.default.createServer(async (req, res) => {
     });
 });
 server.on('upgrade', (req, socket, head) => {
+    // Forward X-Forwarded-Proto for WebSocket upgrades — the 'proxyReq' event
+    // only fires for HTTP requests (web()), not WebSocket upgrades (ws()).
+    // Without this header, Outline's FORCE_HTTPS middleware rejects the
+    // WebSocket connection, breaking Yjs collaborative editing and making
+    // the ProseMirror editor read-only.
+    if (!req.headers['x-forwarded-proto']) {
+        req.headers['x-forwarded-proto'] = GATEWAY_DEFAULT_PROTO;
+    }
+    if (!req.headers['x-forwarded-host'] && req.headers['host']) {
+        req.headers['x-forwarded-host'] = req.headers['host'];
+    }
     outlineProxy.ws(req, socket, head);
 });
 server.listen(GATEWAY_PORT, '0.0.0.0', () => {
