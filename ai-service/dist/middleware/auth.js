@@ -136,8 +136,10 @@ async function sessionAuthMiddleware(req, res, next) {
             headers: {
                 'Cookie': cookies,
                 'Content-Type': 'application/json',
+                'X-Forwarded-Proto': 'https',
             },
             body: JSON.stringify({}),
+            redirect: 'follow',
         });
         if (!response.ok) {
             res.status(401).json({
@@ -229,8 +231,10 @@ async function adminAuthMiddleware(req, res, next) {
             headers: {
                 'Cookie': cookies,
                 'Content-Type': 'application/json',
+                'X-Forwarded-Proto': 'https',
             },
             body: JSON.stringify({}),
+            redirect: 'follow',
         });
         if (!response.ok) {
             res.status(401).json({

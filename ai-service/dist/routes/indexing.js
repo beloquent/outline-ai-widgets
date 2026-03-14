@@ -33,7 +33,16 @@ router.post('/reindex-all', async (req, res) => {
                     }
                 }
                 else {
-                    documents = await outline_1.outlineClient.listDocuments({ limit: 1000 });
+                    let offset = 0;
+                    const limit = 100;
+                    while (true) {
+                        const batch = await outline_1.outlineClient.listDocuments({ limit, offset });
+                        documents.push(...batch);
+                        if (batch.length < limit) {
+                            break;
+                        }
+                        offset += limit;
+                    }
                 }
                 await (0, connection_1.query)('UPDATE ai_indexing_jobs SET documents_queued = $1 WHERE id = $2', [documents.length, jobId]);
                 let documentsIndexed = 0;
