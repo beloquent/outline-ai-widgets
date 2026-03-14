@@ -55,7 +55,8 @@ class OutlineClient {
     logger.debug('Outline API request', { endpoint, body: JSON.stringify(body).substring(0, 200), hasCookies: !!options?.cookies });
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-Forwarded-Proto': 'https',
     };
 
     if (options?.cookies) {
