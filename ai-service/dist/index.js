@@ -49,6 +49,7 @@ const workflow_1 = __importDefault(require("./routes/workflow"));
 const indexing_1 = __importDefault(require("./routes/indexing"));
 const admin_1 = __importDefault(require("./routes/admin"));
 const documents_1 = __importDefault(require("./routes/documents"));
+const graph_1 = __importDefault(require("./routes/graph"));
 const auth_1 = require("./middleware/auth");
 const app = (0, express_1.default)();
 app.use((0, helmet_1.default)());
@@ -80,6 +81,7 @@ app.use('/ai/workflow', auth_1.authMiddleware, workflow_1.default);
 app.use('/ai/indexing', auth_1.adminAuthMiddleware, indexing_1.default);
 app.use('/ai/admin', admin_1.default);
 app.use('/ai/documents', auth_1.sessionAuthMiddleware, documents_1.default);
+app.use('/ai/graph', auth_1.sessionAuthMiddleware, graph_1.default);
 app.use((err, req, res, next) => {
     logger_1.logger.error('Unhandled error:', err);
     res.status(500).json({

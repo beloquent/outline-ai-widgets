@@ -89,8 +89,10 @@ app.use('/framework', express.static(__dirname));
 app.get('/widgets/manifest.json', (req, res) => {
     const aiCopilotPath = path.join(__dirname, 'widgets', 'ai-copilot.js');
     const aiSettingsPath = path.join(__dirname, 'widgets', 'ai-settings.js');
+    const graphViewPath = path.join(__dirname, 'widgets', 'graph-view.js');
     let aiCopilotHash = '';
     let aiSettingsHash = '';
+    let graphViewHash = '';
     try {
         if (fs.existsSync(aiCopilotPath)) {
             const content = fs.readFileSync(aiCopilotPath, 'utf8');
@@ -102,6 +104,13 @@ app.get('/widgets/manifest.json', (req, res) => {
         if (fs.existsSync(aiSettingsPath)) {
             const content = fs.readFileSync(aiSettingsPath, 'utf8');
             aiSettingsHash = computeSriHash(content);
+        }
+    }
+    catch (e) { }
+    try {
+        if (fs.existsSync(graphViewPath)) {
+            const content = fs.readFileSync(graphViewPath, 'utf8');
+            graphViewHash = computeSriHash(content);
         }
     }
     catch (e) { }
@@ -135,6 +144,20 @@ app.get('/widgets/manifest.json', (req, res) => {
                     type: 'modal',
                 },
                 permissions: [],
+            },
+            {
+                id: 'graph-view',
+                name: 'Graph View',
+                version: '1.0.0',
+                bundle: '/widget-framework/widgets/graph-view.js',
+                integrity: graphViewHash,
+                priority: 85,
+                enabled: true,
+                mountPoint: {
+                    type: 'floating',
+                    position: 'bottom-right',
+                },
+                permissions: ['documents.read'],
             },
         ],
         bootstrapIntegrity: bootstrapHash,

@@ -11,6 +11,7 @@ import workflowRoutes from './routes/workflow';
 import indexingRoutes from './routes/indexing';
 import adminRoutes from './routes/admin';
 import documentsRoutes from './routes/documents';
+import graphRoutes from './routes/graph';
 import { authMiddleware, sessionAuthMiddleware, adminAuthMiddleware } from './middleware/auth';
 
 const app = express();
@@ -45,6 +46,7 @@ app.use('/ai/workflow', authMiddleware, workflowRoutes);
 app.use('/ai/indexing', adminAuthMiddleware, indexingRoutes);
 app.use('/ai/admin', adminRoutes);
 app.use('/ai/documents', sessionAuthMiddleware, documentsRoutes);
+app.use('/ai/graph', sessionAuthMiddleware, graphRoutes);
 
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error('Unhandled error:', err);

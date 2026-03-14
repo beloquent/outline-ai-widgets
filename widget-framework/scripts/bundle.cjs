@@ -49,6 +49,19 @@ async function bundle() {
     });
     console.log('[Bundle] AI Settings widget bundle created: dist/widgets/ai-settings.js');
 
+    await esbuild.build({
+      entryPoints: [path.join(__dirname, '../src/widgets/graph-view/index.ts')],
+      bundle: true,
+      outfile: path.join(widgetsDir, 'graph-view.js'),
+      format: 'esm',
+      platform: 'browser',
+      target: 'es2020',
+      sourcemap: true,
+      minify: false,
+      external: [],
+    });
+    console.log('[Bundle] Graph View widget bundle created: dist/widgets/graph-view.js');
+
     console.log('[Bundle] All bundles created successfully!');
   } catch (error) {
     console.error('[Bundle] Build failed:', error);
