@@ -2191,16 +2191,17 @@ class AICopilotWidget {
     `;
 
     try {
-      const result = await this.insertViaYjs(content);
-      
-      if (result.success) {
+      // Try direct editor insertion via paste event dispatch
+      const pasteResult = await this.insertViaPasteEvent(content);
+
+      if (pasteResult.success) {
         button.classList.add('success');
         button.innerHTML = `
           <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
           Inserted!
         `;
         this.showToast('Content inserted into document!');
-        
+
         setTimeout(() => {
           button.classList.remove('success');
           button.disabled = false;
@@ -2210,12 +2211,75 @@ class AICopilotWidget {
           `;
         }, 2000);
       } else {
-        console.log('[AI Copilot] Yjs insert failed, trying API fallback:', result.error);
-        await this.insertViaApi(content, button);
+        console.log('[AI Copilot] Paste insert failed, trying ProseMirror fallback:', pasteResult.error);
+        const yjsResult = await this.insertViaYjs(content);
+        if (yjsResult.success) {
+          button.classList.add('success');
+          button.innerHTML = `
+            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Inserted!
+          `;
+          this.showToast('Content inserted into document!');
+          setTimeout(() => {
+            button.classList.remove('success');
+            button.disabled = false;
+            button.innerHTML = `
+              <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              Insert
+            `;
+          }, 2000);
+        } else {
+          console.log('[AI Copilot] ProseMirror insert failed, using clipboard:', yjsResult.error);
+          await this.clipboardFallback(content, button, 'Insert failed');
+        }
       }
     } catch (error) {
       console.error('[AI Copilot] Insert failed:', error);
       await this.clipboardFallback(content, button, 'Insert failed');
+    }
+  }
+
+  private async insertViaPasteEvent(content: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const editor = document.querySelector('.ProseMirror') as HTMLElement;
+      if (!editor) {
+        return { success: false, error: 'Editor not found' };
+      }
+
+      // Focus the editor and move cursor to end
+      editor.focus();
+
+      // Place cursor at the end of the document
+      const selection = window.getSelection();
+      if (selection) {
+        selection.selectAllChildren(editor);
+        selection.collapseToEnd();
+      }
+
+      // Prefix content with a newline separator
+      const insertContent = '\n\n---\n\n## AI Copilot Response\n\n' + content;
+
+      // Create and dispatch a paste event with the content
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', insertContent);
+
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dataTransfer,
+      });
+
+      const handled = !editor.dispatchEvent(pasteEvent);
+      console.log('[AI Copilot] Paste event dispatched, prevented default:', handled);
+
+      if (handled) {
+        return { success: true };
+      }
+
+      return { success: false, error: 'Paste event was not handled by editor' };
+    } catch (error) {
+      console.error('[AI Copilot] insertViaPasteEvent error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 

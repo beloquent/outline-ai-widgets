@@ -1,1 +1,1 @@
-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/widgets/ai-copilot/index.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,gBAAgB,EAAiB,MAAM,iBAAiB,CAAC;AAwoFvE,QAAA,MAAM,UAAU,EAAE,gBAcjB,CAAC;AAIF,eAAe,UAAU,CAAC"}
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/widgets/ai-copilot/index.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,gBAAgB,EAAiB,MAAM,iBAAiB,CAAC;AAwsFvE,QAAA,MAAM,UAAU,EAAE,gBAcjB,CAAC;AAIF,eAAe,UAAU,CAAC"}
