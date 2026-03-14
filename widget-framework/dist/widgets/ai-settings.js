@@ -1,6 +1,6 @@
 // src/widgets/ai-settings/index.ts
 var AI_SERVICE_URL = "/ai";
-var WIDGET_VERSION = "1.2.0";
+var WIDGET_VERSION = "1.3.0";
 function getWidgetSDK() {
   return window.widgetSDK;
 }

@@ -1,7 +1,7 @@
 import type { WidgetDefinition, WidgetContext } from '../../sdk/types';
 
 const AI_SERVICE_URL = '/ai';
-const WIDGET_VERSION = '1.2.0';
+const WIDGET_VERSION = '1.3.0';
 
 type CopilotMode = 'documentation' | 'workflow' | 'sop' | 'kbChat' | 'createDraft';
 
