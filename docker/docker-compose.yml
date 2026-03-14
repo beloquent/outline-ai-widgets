@@ -4,7 +4,7 @@ services:
   # PostgreSQL with pgvector extension for RAG
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: outline-postgres
+    # container_name omitted to avoid conflicts with existing outline stack
     restart: unless-stopped
     environment:
       POSTGRES_USER: outline
@@ -12,7 +12,6 @@ services:
       POSTGRES_DB: outline
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U outline -d outline"]
       interval: 10s
@@ -27,7 +26,7 @@ services:
   # Redis for caching, sessions, and queues
   redis:
     image: redis:7-alpine
-    container_name: outline-redis
+    # container_name omitted to avoid conflicts with existing outline stack
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
     volumes:
@@ -45,7 +44,7 @@ services:
   # Official Outline container
   outline:
     image: docker.getoutline.com/outlinewiki/outline:latest
-    container_name: outline
+    # container_name omitted to avoid conflicts with existing outline stack
     restart: unless-stopped
     depends_on:
       postgres:
@@ -84,7 +83,7 @@ services:
       dockerfile: docker/Dockerfile.widgets
     # Alternative: Use pre-built image from registry
     # image: your-registry/outline-widgets:latest
-    container_name: outline-widgets
+    # container_name omitted to avoid conflicts with existing outline stack
     restart: unless-stopped
     depends_on:
       outline:
