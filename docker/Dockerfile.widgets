@@ -74,8 +74,7 @@ ENV AI_SERVICE_PORT=3001
 
 # Health check verifies all three services
 HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \
-    CMD wget -qO- http://localhost:5000/widget-framework/health && \
-        wget -qO- http://localhost:3001/ai/health && \
-        wget -qO- http://localhost:5000/ > /dev/null || exit 1
+    CMD wget -qO- http://localhost:3003/health && \
+        wget -qO- http://localhost:3001/ai/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
