@@ -66,13 +66,40 @@ router.post('/chat', async (req, res) => {
         const body = chatSchema.parse(req.body);
         const settings = await (0, settings_1.getFeatureSettings)('copilot');
         const modePrompt = await (0, settings_1.getModePrompt)(body.mode);
-        let documentContent = body.documentContent;
+        let documentContent = body.documentContent || '';
         let documentTitle = 'Document';
-        if (body.documentId && !documentContent) {
-            const doc = await outline_1.outlineClient.getDocument(body.documentId);
-            documentContent = doc.text;
-            documentTitle = doc.title;
+        // Always fetch from Outline API to ensure fresh content —
+        // the widget's cached context may be stale or empty
+        if (body.documentId) {
+            try {
+                const doc = await outline_1.outlineClient.getDocument(body.documentId);
+                documentTitle = doc.title || documentTitle;
+                logger_1.logger.info('Document fetched from Outline API', {
+                    documentId: body.documentId,
+                    title: doc.title,
+                    textLength: doc.text?.length ?? 0,
+                    hasText: !!doc.text,
+                    textPreview: doc.text?.substring(0, 100) || '(empty)',
+                });
+                // Prefer the API-fetched content (freshest), fall back to widget-provided content
+                if (doc.text && doc.text.trim().length > 0) {
+                    documentContent = doc.text;
+                }
+            }
+            catch (err) {
+                logger_1.logger.warn('Failed to fetch document from Outline API, using widget-provided content', {
+                    documentId: body.documentId,
+                    error: String(err),
+                    widgetContentLength: documentContent.length,
+                });
+            }
         }
+        logger_1.logger.info('Document content for AI prompt', {
+            documentId: body.documentId,
+            documentTitle,
+            contentLength: documentContent.length,
+            contentPreview: documentContent.substring(0, 150) || '(empty)',
+        });
         const isEditRequest = detectEditRequest(body.question);
         const isRAGTriggered = detectRAGTrigger(body.question);
         let ragContext = null;

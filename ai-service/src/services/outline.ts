@@ -84,12 +84,23 @@ class OutlineClient {
     }
 
     const result = await response.json() as { data: T };
-    logger.debug(`Outline API response data count: ${Array.isArray(result.data) ? result.data.length : 'not-array'}`);
+    logger.debug(`Outline API response for ${endpoint}`, {
+      dataKeys: result.data ? Object.keys(result.data as any) : [],
+      isArray: Array.isArray(result.data),
+    });
     return result.data;
   }
 
   async getDocument(documentId: string): Promise<OutlineDocument> {
-    return this.request<OutlineDocument>('documents.info', { id: documentId });
+    const doc = await this.request<OutlineDocument>('documents.info', { id: documentId });
+    logger.info('getDocument result', {
+      id: doc.id,
+      title: doc.title,
+      hasText: !!doc.text,
+      textLength: doc.text?.length ?? 0,
+      textType: typeof doc.text,
+    });
+    return doc;
   }
 
   async listDocuments(options: {

@@ -48,11 +48,22 @@ class OutlineClient {
             throw new Error(`Outline API error: ${response.status} - ${errorText}`);
         }
         const result = await response.json();
-        logger_1.logger.debug(`Outline API response data count: ${Array.isArray(result.data) ? result.data.length : 'not-array'}`);
+        logger_1.logger.debug(`Outline API response for ${endpoint}`, {
+            dataKeys: result.data ? Object.keys(result.data) : [],
+            isArray: Array.isArray(result.data),
+        });
         return result.data;
     }
     async getDocument(documentId) {
-        return this.request('documents.info', { id: documentId });
+        const doc = await this.request('documents.info', { id: documentId });
+        logger_1.logger.info('getDocument result', {
+            id: doc.id,
+            title: doc.title,
+            hasText: !!doc.text,
+            textLength: doc.text?.length ?? 0,
+            textType: typeof doc.text,
+        });
+        return doc;
     }
     async listDocuments(options = {}) {
         return this.request('documents.list', {

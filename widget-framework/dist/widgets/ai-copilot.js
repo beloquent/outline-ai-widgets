@@ -1678,6 +1678,21 @@ var AICopilotWidget = class {
       filename: att.filename,
       content: att.content
     }));
+    let documentContent = this.currentContext?.document?.text || "";
+    const editorEl = document.querySelector(".ProseMirror");
+    if (editorEl) {
+      const editorText = editorEl.textContent?.trim() || "";
+      if (editorText.length > documentContent.length) {
+        documentContent = editorText;
+        console.log("[AI Copilot] Using live editor content:", documentContent.length, "chars");
+      }
+    }
+    console.log("[AI Copilot] Document content for chat:", {
+      cachedLength: this.currentContext?.document?.text?.length ?? 0,
+      finalLength: documentContent.length,
+      documentId,
+      preview: documentContent.substring(0, 100)
+    });
     const response = await fetch(`${AI_SERVICE_URL}/copilot/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1686,7 +1701,7 @@ var AICopilotWidget = class {
         mode: this.currentMode,
         documentId,
         documentPath: this.breadcrumbPath.length > 0 ? this.breadcrumbPath.join(" / ") : void 0,
-        documentContent: this.currentContext?.document?.text,
+        documentContent,
         conversationHistory: this.messages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
         attachments: attachmentsPayload
       })
