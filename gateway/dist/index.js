@@ -92,12 +92,26 @@ function generateCspHeader(bootstrapHash) {
         `img-src 'self' data: blob: https:`,
         `font-src 'self' data:`,
         `connect-src 'self' wss: ws: https:`,
+        `frame-src 'self' https:`,
         `frame-ancestors 'self'`,
         `object-src 'none'`,
         `base-uri 'self'`,
-        `form-action 'self'`,
+        // Allow form submissions to https: so OAuth providers (Google, Slack,
+        // Microsoft, email magic-link callbacks) work. Without https:, the browser
+        // silently blocks OAuth form submissions and only passkey auth works.
+        `form-action 'self' https:`,
     ];
     return directives.join('; ');
+}
+// Paths where the widget bootstrap should NOT be injected — primarily auth
+// flows, where injecting JS on unauthenticated pages can race with Outline's
+// auth redirects and cause issues (e.g. only passkey offered for sign-in).
+const WIDGET_INJECTION_SKIP_PREFIXES = ['/auth/', '/auth.', '/login', '/signup', '/logout'];
+function shouldSkipWidgetInjection(url) {
+    if (!url)
+        return false;
+    const path = url.split('?')[0];
+    return WIDGET_INJECTION_SKIP_PREFIXES.some(prefix => path === prefix || path === prefix.replace(/\/$/, '') || path.startsWith(prefix));
 }
 function generateErrorPage(serviceName, errorMessage, retryCount) {
     const timestamp = new Date().toISOString();
@@ -390,6 +404,12 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
             });
             if (!hasHeadTag) {
                 log('warn', 'No </head> tag found in HTML response - widget injection skipped');
+                res.end(body);
+                return;
+            }
+            // Skip injection on auth pages to avoid interfering with the OAuth flow
+            if (shouldSkipWidgetInjection(req.url)) {
+                log('info', `Skipping widget injection on auth path ${req.url}`);
                 res.end(body);
                 return;
             }
