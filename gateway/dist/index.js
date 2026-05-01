@@ -39,6 +39,9 @@ function logRequest(req, target, startTime, statusCode) {
         log('info', `${method} ${url} -> ${target} [${status}] ${duration}ms`);
     }
 }
+// ---------------------------------------------------------------------------
+// SRI hash for widget bootstrap script
+// ---------------------------------------------------------------------------
 let cachedBootstrapHash = '';
 let lastHashFetch = 0;
 const HASH_CACHE_TTL = 60000;
@@ -84,6 +87,9 @@ function getWidgetBootstrapScript(integrity) {
 </script>
 `;
 }
+// ---------------------------------------------------------------------------
+// Content Security Policy
+// ---------------------------------------------------------------------------
 function generateCspHeader(bootstrapHash) {
     const directives = [
         `default-src 'self'`,
@@ -96,16 +102,13 @@ function generateCspHeader(bootstrapHash) {
         `frame-ancestors 'self'`,
         `object-src 'none'`,
         `base-uri 'self'`,
-        // Allow form submissions to https: so OAuth providers (Google, Slack,
-        // Microsoft, email magic-link callbacks) work. Without https:, the browser
-        // silently blocks OAuth form submissions and only passkey auth works.
         `form-action 'self' https:`,
     ];
     return directives.join('; ');
 }
-// Paths where the widget bootstrap should NOT be injected — primarily auth
-// flows, where injecting JS on unauthenticated pages can race with Outline's
-// auth redirects and cause issues (e.g. only passkey offered for sign-in).
+// ---------------------------------------------------------------------------
+// Auth-page widget-injection skip list
+// ---------------------------------------------------------------------------
 const WIDGET_INJECTION_SKIP_PREFIXES = ['/auth/', '/auth.', '/login', '/signup', '/logout'];
 function shouldSkipWidgetInjection(url) {
     if (!url)
@@ -113,6 +116,22 @@ function shouldSkipWidgetInjection(url) {
     const path = url.split('?')[0];
     return WIDGET_INJECTION_SKIP_PREFIXES.some(prefix => path === prefix || path === prefix.replace(/\/$/, '') || path.startsWith(prefix));
 }
+// ---------------------------------------------------------------------------
+// Passthrough path detection – these routes go to Outline WITHOUT response
+// modification (no selfHandleResponse, no HTML injection, no CSP rewrite).
+// ---------------------------------------------------------------------------
+function isPassthroughPath(url) {
+    const path = url.split('?')[0];
+    return (path.startsWith('/api/') ||
+        path === '/api' ||
+        path.startsWith('/auth/') ||
+        path === '/auth' ||
+        path.startsWith('/static/') ||
+        path.startsWith('/realtime'));
+}
+// ---------------------------------------------------------------------------
+// Service-starting error page
+// ---------------------------------------------------------------------------
 function generateErrorPage(serviceName, errorMessage, retryCount) {
     const timestamp = new Date().toISOString();
     const refreshSeconds = 5;
@@ -226,7 +245,7 @@ function generateErrorPage(serviceName, errorMessage, retryCount) {
     <div class="spinner"></div>
     <h1>Service Starting Up</h1>
     <p class="subtitle">Please wait while the application initializes...</p>
-    
+
     <div class="details">
       <div class="detail-row">
         <span class="detail-label">Service</span>
@@ -245,15 +264,15 @@ function generateErrorPage(serviceName, errorMessage, retryCount) {
         <span class="detail-value">${timestamp}</span>
       </div>
     </div>
-    
+
     <div class="countdown" id="countdown">${refreshSeconds}</div>
     <div class="countdown-label">seconds until auto-refresh</div>
-    
+
     <div class="manual-refresh">
       <a href="javascript:location.reload()">Refresh now</a>
     </div>
   </div>
-  
+
   <script>
     (function() {
       var seconds = ${refreshSeconds};
@@ -269,6 +288,9 @@ function generateErrorPage(serviceName, errorMessage, retryCount) {
 </body>
 </html>`;
 }
+// ---------------------------------------------------------------------------
+// Health checks
+// ---------------------------------------------------------------------------
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -282,6 +304,9 @@ function checkServiceHealth(targetUrl) {
             path: '/',
             method: 'HEAD',
             timeout: 2000,
+            headers: {
+                'X-Forwarded-Proto': GATEWAY_DEFAULT_PROTO,
+            },
         };
         const requestModule = isHttps ? https_1.default : http_1.default;
         const req = requestModule.request(options, (res) => {
@@ -318,10 +343,50 @@ async function waitForServiceWithRetry(targetUrl, serviceName, res) {
     }
     return false;
 }
-const outlineProxy = http_proxy_1.default.createProxyServer({
+// Cached health state per service — avoids a health-check round-trip on every
+// single request once the target has been confirmed reachable.
+const healthCache = {};
+const HEALTH_CACHE_TTL_OK = 30_000; // 30 s after a successful check
+const HEALTH_CACHE_TTL_FAIL = 5_000; // 5 s after a failed check (retry sooner)
+function invalidateHealth(targetUrl) {
+    delete healthCache[targetUrl];
+}
+async function ensureServiceReady(targetUrl, serviceName, res) {
+    const cached = healthCache[targetUrl];
+    if (cached) {
+        const ttl = cached.healthy ? HEALTH_CACHE_TTL_OK : HEALTH_CACHE_TTL_FAIL;
+        if (Date.now() - cached.ts < ttl) {
+            if (cached.healthy)
+                return true;
+            // Cached as unhealthy — still show the error page
+            if (!res.headersSent) {
+                res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(generateErrorPage(serviceName, 'Service unavailable (cached)', 0));
+            }
+            return false;
+        }
+    }
+    const ok = await waitForServiceWithRetry(targetUrl, serviceName, res);
+    healthCache[targetUrl] = { healthy: ok, ts: Date.now() };
+    return ok;
+}
+// ---------------------------------------------------------------------------
+// Proxy instances
+// ---------------------------------------------------------------------------
+// Passthrough proxy — for /api, /auth, /static, and WebSocket.
+// No selfHandleResponse: http-proxy handles the full request+response lifecycle
+// untouched, which is critical for POST bodies (API calls) and auth redirects.
+const outlinePassthroughProxy = http_proxy_1.default.createProxyServer({
+    target: OUTLINE_URL,
+    ws: true,
+    changeOrigin: true,
+});
+// HTML injection proxy — for document pages (/, /doc/*, /collection/*, etc.)
+// selfHandleResponse lets us buffer the HTML, strip CSP meta tags, and inject
+// the widget bootstrap script before sending.
+const outlineHtmlProxy = http_proxy_1.default.createProxyServer({
     target: OUTLINE_URL,
     selfHandleResponse: true,
-    ws: true,
     changeOrigin: true,
 });
 const widgetProxy = http_proxy_1.default.createProxyServer({
@@ -332,19 +397,40 @@ const aiProxy = http_proxy_1.default.createProxyServer({
     target: AI_SERVICE_URL,
     changeOrigin: true,
 });
-outlineProxy.on('proxyReq', (proxyReq, req) => {
-    // Forward proxy headers so Outline sees the original protocol/host
-    // (critical when FORCE_HTTPS=true to prevent redirect loops)
+// ---------------------------------------------------------------------------
+// Shared helper — sets X-Forwarded-* headers on proxied requests so Outline
+// sees the correct protocol/host (critical with FORCE_HTTPS=true).
+// ---------------------------------------------------------------------------
+function setForwardedHeaders(proxyReq, req) {
     proxyReq.setHeader('X-Forwarded-Proto', req.headers['x-forwarded-proto'] || GATEWAY_DEFAULT_PROTO);
     proxyReq.setHeader('X-Forwarded-Host', req.headers['host'] || '');
     proxyReq.setHeader('X-Forwarded-For', req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
-    const acceptHeader = req.headers['accept'] || '';
-    const isHtmlRequest = acceptHeader.includes('text/html') || req.url === '/' || !req.url?.includes('.');
-    if (isHtmlRequest && (req.method === 'GET' || req.method === 'HEAD')) {
-        proxyReq.setHeader('Accept-Encoding', 'identity');
+}
+// ---------------------------------------------------------------------------
+// Passthrough proxy events
+// ---------------------------------------------------------------------------
+outlinePassthroughProxy.on('proxyReq', (proxyReq, req) => {
+    setForwardedHeaders(proxyReq, req);
+    log('debug', `[passthrough] proxying ${req.method} ${req.url}`);
+});
+outlinePassthroughProxy.on('error', (err, req, res) => {
+    invalidateHealth(OUTLINE_URL);
+    log('error', 'Outline passthrough proxy error', { error: err.message, url: req.url, stack: err.stack });
+    if (res instanceof http_1.default.ServerResponse && !res.headersSent) {
+        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(generateErrorPage('Outline', err.message, MAX_RETRIES));
     }
 });
-outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
+// ---------------------------------------------------------------------------
+// HTML injection proxy events
+// ---------------------------------------------------------------------------
+outlineHtmlProxy.on('proxyReq', (proxyReq, req) => {
+    setForwardedHeaders(proxyReq, req);
+    // Always request uncompressed so we can modify the HTML body
+    proxyReq.setHeader('Accept-Encoding', 'identity');
+    log('debug', `[html] proxying ${req.method} ${req.url}`);
+});
+outlineHtmlProxy.on('proxyRes', async (proxyRes, req, res) => {
     const contentType = proxyRes.headers['content-type'] || '';
     const contentEncoding = proxyRes.headers['content-encoding'] || '';
     const statusCode = proxyRes.statusCode || 200;
@@ -361,9 +447,6 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
     if (isHtml && isGetRequest) {
         delete headers['content-length'];
         delete headers['content-encoding'];
-        // Remove any existing CSP headers from Outline to prevent conflicts
-        // (Outline sends lowercase headers; browsers enforce the most restrictive
-        // of multiple CSP headers, which would block our injected inline script)
         delete headers['content-security-policy'];
         delete headers['content-security-policy-report-only'];
         const bootstrapHash = await fetchBootstrapHash();
@@ -377,7 +460,6 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
         headers['X-Frame-Options'] = 'SAMEORIGIN';
         headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
         res.writeHead(statusCode, headers);
-        // Decompress response if Outline sent compressed content despite Accept-Encoding: identity
         let stream = proxyRes;
         if (contentEncoding === 'gzip') {
             log('info', 'Decompressing gzip response from Outline');
@@ -407,14 +489,11 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
                 res.end(body);
                 return;
             }
-            // Skip injection on auth pages to avoid interfering with the OAuth flow
             if (shouldSkipWidgetInjection(req.url)) {
                 log('info', `Skipping widget injection on auth path ${req.url}`);
                 res.end(body);
                 return;
             }
-            // Remove Outline's CSP meta tag so our header-based CSP takes precedence
-            // (Outline uses nonce-based CSP in meta tags which blocks our injected script)
             const cspMetaRegex = /<meta[^>]*http-equiv\s*=\s*["']Content-Security-Policy["'][^>]*>/gi;
             const strippedBody = body.replace(cspMetaRegex, '<!-- CSP meta removed by Gateway -->');
             const cspMetaRemoved = strippedBody !== body;
@@ -430,20 +509,23 @@ outlineProxy.on('proxyRes', async (proxyRes, req, res) => {
         });
     }
     else {
-        if (isGetRequest && !isHtml) {
-            log('debug', `Non-HTML response from Outline, skipping injection`, { contentType, statusCode });
-        }
+        // Non-HTML response (redirect, JSON, etc.) — pipe through unmodified
+        log('debug', `Non-HTML response via HTML proxy, piping through`, { contentType, statusCode });
         res.writeHead(statusCode, headers);
         proxyRes.pipe(res);
     }
 });
-outlineProxy.on('error', (err, _req, res) => {
-    log('error', 'Outline proxy error', { error: err.message, stack: err.stack });
+outlineHtmlProxy.on('error', (err, req, res) => {
+    invalidateHealth(OUTLINE_URL);
+    log('error', 'Outline HTML proxy error', { error: err.message, url: req.url, stack: err.stack });
     if (res instanceof http_1.default.ServerResponse && !res.headersSent) {
         res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(generateErrorPage('Outline', err.message, MAX_RETRIES));
     }
 });
+// ---------------------------------------------------------------------------
+// Widget + AI proxy events
+// ---------------------------------------------------------------------------
 widgetProxy.on('error', (err, _req, res) => {
     log('error', 'Widget proxy error', { error: err.message, stack: err.stack });
     if (res instanceof http_1.default.ServerResponse && !res.headersSent) {
@@ -458,57 +540,115 @@ aiProxy.on('error', (err, _req, res) => {
         res.end(generateErrorPage('AI Service', err.message, MAX_RETRIES));
     }
 });
+// ---------------------------------------------------------------------------
+// HTTP request handler
+// ---------------------------------------------------------------------------
 const server = http_1.default.createServer(async (req, res) => {
     const url = req.url || '/';
     const startTime = Date.now();
     let target = 'Outline';
+    // -----------------------------------------------------------------------
+    // Gateway diagnostic endpoint — use this to verify requests reach the
+    // Gateway and to inspect its routing/configuration.
+    // -----------------------------------------------------------------------
+    if (url === '/_gateway/health' || url === '/_gateway/health/') {
+        const health = {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            uptime: Math.round(process.uptime()),
+            config: {
+                port: GATEWAY_PORT,
+                outlineUrl: OUTLINE_URL,
+                widgetUrl: WIDGET_URL,
+                aiServiceUrl: AI_SERVICE_URL,
+                defaultProto: GATEWAY_DEFAULT_PROTO,
+                cspEnabled: ENABLE_CSP,
+                logLevel: CURRENT_LOG_LEVEL,
+            },
+            routing: {
+                '/widget-framework/*': 'Widget Framework',
+                '/ai/*': 'AI Service',
+                '/api/*': 'Outline (passthrough)',
+                '/auth/*': 'Outline (passthrough)',
+                '/static/*': 'Outline (passthrough)',
+                '/realtime': 'Outline (passthrough)',
+                '/*': 'Outline (HTML injection)',
+            },
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(health, null, 2));
+        logRequest(req, 'Gateway', startTime, 200);
+        return;
+    }
+    // -----------------------------------------------------------------------
+    // Route to the appropriate backend
+    // -----------------------------------------------------------------------
     if (url.startsWith('/widget-framework/')) {
         target = 'Widget Framework';
         const rewrittenUrl = url.replace('/widget-framework', '');
         req.url = rewrittenUrl || '/';
-        const isReady = await waitForServiceWithRetry(WIDGET_URL, 'Widget Framework', res);
+        const isReady = await ensureServiceReady(WIDGET_URL, 'Widget Framework', res);
         if (isReady) {
             widgetProxy.web(req, res);
         }
     }
     else if (url.startsWith('/ai/')) {
         target = 'AI Service';
-        const isReady = await waitForServiceWithRetry(AI_SERVICE_URL, 'AI Service', res);
+        const isReady = await ensureServiceReady(AI_SERVICE_URL, 'AI Service', res);
         if (isReady) {
             aiProxy.web(req, res);
         }
     }
-    else {
-        const isReady = await waitForServiceWithRetry(OUTLINE_URL, 'Outline', res);
+    else if (isPassthroughPath(url)) {
+        // API, auth, static, realtime — passthrough to Outline without any
+        // response modification.  This avoids selfHandleResponse which can
+        // interfere with POST bodies and non-HTML response lifecycles.
+        target = 'Outline (passthrough)';
+        log('debug', `Routing to passthrough proxy`, { method: req.method, url });
+        const isReady = await ensureServiceReady(OUTLINE_URL, 'Outline', res);
         if (isReady) {
-            outlineProxy.web(req, res);
+            outlinePassthroughProxy.web(req, res);
+        }
+    }
+    else {
+        // Document pages and everything else — HTML injection proxy
+        target = 'Outline (HTML)';
+        log('debug', `Routing to HTML injection proxy`, { method: req.method, url });
+        const isReady = await ensureServiceReady(OUTLINE_URL, 'Outline', res);
+        if (isReady) {
+            outlineHtmlProxy.web(req, res);
         }
     }
     res.on('finish', () => {
         logRequest(req, target, startTime, res.statusCode);
     });
 });
+// ---------------------------------------------------------------------------
+// WebSocket upgrade — uses the passthrough proxy (ws: true)
+// ---------------------------------------------------------------------------
 server.on('upgrade', (req, socket, head) => {
-    // Forward X-Forwarded-Proto for WebSocket upgrades — the 'proxyReq' event
-    // only fires for HTTP requests (web()), not WebSocket upgrades (ws()).
-    // Without this header, Outline's FORCE_HTTPS middleware rejects the
-    // WebSocket connection, breaking Yjs collaborative editing and making
-    // the ProseMirror editor read-only.
     if (!req.headers['x-forwarded-proto']) {
         req.headers['x-forwarded-proto'] = GATEWAY_DEFAULT_PROTO;
     }
     if (!req.headers['x-forwarded-host'] && req.headers['host']) {
         req.headers['x-forwarded-host'] = req.headers['host'];
     }
-    outlineProxy.ws(req, socket, head);
+    log('debug', `WebSocket upgrade: ${req.url}`, { proto: req.headers['x-forwarded-proto'] });
+    outlinePassthroughProxy.ws(req, socket, head);
 });
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
 server.listen(GATEWAY_PORT, '0.0.0.0', () => {
     log('info', `Gateway started`, { port: GATEWAY_PORT, logLevel: CURRENT_LOG_LEVEL });
     log('info', `Proxying Outline from ${OUTLINE_URL}`);
+    log('info', `  passthrough paths: /api/*, /auth/*, /static/*, /realtime`);
+    log('info', `  HTML injection:    all other paths`);
     log('info', `Proxying Widget Framework from ${WIDGET_URL}`);
     log('info', `Proxying AI Service from ${AI_SERVICE_URL}`);
+    log('info', `Default protocol: ${GATEWAY_DEFAULT_PROTO}`);
     log('info', `Retry policy: ${MAX_RETRIES} attempts with ${RETRY_DELAY_MS}ms delay`);
-    log('debug', 'Injecting widget bootstrap into HTML responses');
+    log('info', `Diagnostic endpoint: /_gateway/health`);
 });
 process.on('SIGTERM', () => {
     log('info', 'Received SIGTERM, shutting down...');
