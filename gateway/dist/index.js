@@ -294,15 +294,15 @@ function generateErrorPage(serviceName, errorMessage, retryCount) {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-function checkServiceHealth(targetUrl) {
+function checkServiceHealth(targetUrl, healthPath = '/health') {
     return new Promise((resolve) => {
         const url = new url_1.URL(targetUrl);
         const isHttps = url.protocol === 'https:';
         const options = {
             hostname: url.hostname,
             port: url.port || (isHttps ? 443 : 80),
-            path: '/',
-            method: 'HEAD',
+            path: healthPath,
+            method: 'GET',
             timeout: 2000,
             headers: {
                 'X-Forwarded-Proto': GATEWAY_DEFAULT_PROTO,
@@ -322,10 +322,10 @@ function checkServiceHealth(targetUrl) {
         req.end();
     });
 }
-async function waitForServiceWithRetry(targetUrl, serviceName, res) {
+async function waitForServiceWithRetry(targetUrl, serviceName, res, healthPath = '/health') {
     let lastError = 'Unknown error';
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        const result = await checkServiceHealth(targetUrl);
+        const result = await checkServiceHealth(targetUrl, healthPath);
         if (result.healthy) {
             log('debug', `${serviceName} health check passed`, { attempt });
             return true;
@@ -351,14 +351,13 @@ const HEALTH_CACHE_TTL_FAIL = 5_000; // 5 s after a failed check (retry sooner)
 function invalidateHealth(targetUrl) {
     delete healthCache[targetUrl];
 }
-async function ensureServiceReady(targetUrl, serviceName, res) {
+async function ensureServiceReady(targetUrl, serviceName, res, healthPath = '/health') {
     const cached = healthCache[targetUrl];
     if (cached) {
         const ttl = cached.healthy ? HEALTH_CACHE_TTL_OK : HEALTH_CACHE_TTL_FAIL;
         if (Date.now() - cached.ts < ttl) {
             if (cached.healthy)
                 return true;
-            // Cached as unhealthy — still show the error page
             if (!res.headersSent) {
                 res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end(generateErrorPage(serviceName, 'Service unavailable (cached)', 0));
@@ -366,7 +365,7 @@ async function ensureServiceReady(targetUrl, serviceName, res) {
             return false;
         }
     }
-    const ok = await waitForServiceWithRetry(targetUrl, serviceName, res);
+    const ok = await waitForServiceWithRetry(targetUrl, serviceName, res, healthPath);
     healthCache[targetUrl] = { healthy: ok, ts: Date.now() };
     return ok;
 }
@@ -594,7 +593,7 @@ const server = http_1.default.createServer(async (req, res) => {
     }
     else if (url.startsWith('/ai/')) {
         target = 'AI Service';
-        const isReady = await ensureServiceReady(AI_SERVICE_URL, 'AI Service', res);
+        const isReady = await ensureServiceReady(AI_SERVICE_URL, 'AI Service', res, '/ai/health');
         if (isReady) {
             aiProxy.web(req, res);
         }
@@ -605,7 +604,7 @@ const server = http_1.default.createServer(async (req, res) => {
         // interfere with POST bodies and non-HTML response lifecycles.
         target = 'Outline (passthrough)';
         log('debug', `Routing to passthrough proxy`, { method: req.method, url });
-        const isReady = await ensureServiceReady(OUTLINE_URL, 'Outline', res);
+        const isReady = await ensureServiceReady(OUTLINE_URL, 'Outline', res, '/');
         if (isReady) {
             outlinePassthroughProxy.web(req, res);
         }
@@ -614,7 +613,7 @@ const server = http_1.default.createServer(async (req, res) => {
         // Document pages and everything else — HTML injection proxy
         target = 'Outline (HTML)';
         log('debug', `Routing to HTML injection proxy`, { method: req.method, url });
-        const isReady = await ensureServiceReady(OUTLINE_URL, 'Outline', res);
+        const isReady = await ensureServiceReady(OUTLINE_URL, 'Outline', res, '/');
         if (isReady) {
             outlineHtmlProxy.web(req, res);
         }
